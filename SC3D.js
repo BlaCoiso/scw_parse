@@ -64,109 +64,122 @@ class SC3D {
                     new XML.Tag("authoring_tool", "SC3D.js (BlaCoiso)")
                 ),
                 new XML.Tag("created", new Date().toISOString()),
-                new XML.Tag("up_axis", "Z_UP")
+                new XML.Tag("up_axis", "Y_UP")
             ]),
             new XML.Tag("library_geometries", this.chunks.filter(c => c instanceof SC3DGeometry)
                 .map(c => {
                     const name = c.type;
-                    const meshes = c.meshes.map((m, i) => {
-                        const sources = [];
-                        let hasVertices = false;
-                        let hasNormals = false;
-                        let hasUVs = false;
-                        let hasColors = false;
-                        if (c.props.POSITION) {
-                            hasVertices = true;
-                            const verts = c.props.POSITION[i % c.props.POSITION.length].values;
-                            sources.push(new XML.Tag("source",
-                                [
-                                    new XML.Tag("float_array",
-                                        verts.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
-                                        [["id", name + "-positions-array"], ["count", verts.length * 3]]
-                                    ),
-                                    new XML.Tag("technique_common",
-                                        new XML.Tag("accessor", [
-                                            new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
-                                        ], [["source", '#' + name + "-positions-array"], ["count", verts.length], ["stride", 3]])
-                                    )
-                                ], new XML.Attribute("id", name + "-positions")
-                            ));
-                        }
-                        if (c.props.NORMAL) {
-                            hasNormals = true;
-                            const norms = c.props.NORMAL[i % c.props.NORMAL.length].values;
-                            sources.push(new XML.Tag("source",
-                                [
-                                    new XML.Tag("float_array",
-                                        norms.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
-                                        [["id", name + "-normals-array"], ["count", norms.length * 3]]
-                                    ),
-                                    new XML.Tag("technique_common",
-                                        new XML.Tag("accessor", [
-                                            new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
-                                        ], [["source", '#' + name + "-normals-array"], ["count", norms.length], ["stride", 3]])
-                                    )
-                                ], new XML.Attribute("id", name + "-normals")
-                            ));
-                        }
-                        if (c.props.TEXCOORD) {
-                            hasUVs = true;
-                            const texUVs = c.props.TEXCOORD;
-                            texUVs.forEach((UV, i) => sources.push(new XML.Tag("source",
-                                [
-                                    new XML.Tag("float_array",
-                                        UV.values.map(v => `${v.u} ${1 - v.v}`).join(" "),
-                                        [["id", name + "-uv-array-" + i], ["count", UV.values.length * 2]]
-                                    ),
-                                    new XML.Tag("technique_common",
-                                        new XML.Tag("accessor", [
-                                            new XML.Tag("param", null, [["name", "S"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "T"], ["type", "float"]])
-                                        ], [["source", '#' + name + "-uv-array-" + i], ["count", UV.values.length], ["stride", 2]])
-                                    )
-                                ], new XML.Attribute("id", name + "-texCoords-" + i)
-                            )));
-                        }
-                        if (c.props.COLOR) {
-                            hasColors = true;
-                            const colors = c.props.COLOR[i % c.props.NORMAL.length].values;
-                            sources.push(new XML.Tag("source",
-                                [
-                                    new XML.Tag("float_array",
-                                        colors.map(a => `${a.r} ${a.g} ${a.b} ${a.a}`).join(" "),
-                                        [["id", name + "-colors-array"], ["count", colors.length * 4]]
-                                    ),
-                                    new XML.Tag("technique_common",
-                                        new XML.Tag("accessor", [
-                                            new XML.Tag("param", null, [["name", "R"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "G"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "B"], ["type", "float"]]),
-                                            new XML.Tag("param", null, [["name", "A"], ["type", "float"]])
-                                        ], [["source", '#' + name + "-colors-array"], ["count", colors.length], ["stride", 4]])
-                                    )
-                                ], new XML.Attribute("id", name + "-colors")
-                            ));
-                        }
+                    const meshTag = new XML.Tag("mesh");
+
+                    const sources = [];
+                    let hasVertices = false;
+                    let hasNormals = false;
+                    let hasUVs = false;
+                    let hasColors = false;
+                    if (c.props.POSITION) {
+                        hasVertices = true;
+                        const verts = c.props.POSITION;
+                        verts.forEach((vert, i) => sources.push(new XML.Tag("source",
+                            [
+                                new XML.Tag("float_array",
+                                    vert.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
+                                    [["id", name + "-positions-array-" + i], ["count", vert.values.length * 3]]
+                                ),
+                                new XML.Tag("technique_common",
+                                    new XML.Tag("accessor", [
+                                        new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
+                                    ], [["source", '#' + name + "-positions-array-" + i], ["count", vert.values.length], ["stride", 3]])
+                                )
+                            ], new XML.Attribute("id", name + "-positions-" + i)
+                        )));
+                    }
+                    if (c.props.NORMAL) {
+                        hasNormals = true;
+                        const norms = c.props.NORMAL;
+                        norms.forEach((norm, i) => sources.push(new XML.Tag("source",
+                            [
+                                new XML.Tag("float_array",
+                                    norm.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
+                                    [["id", name + "-normals-array-" + i], ["count", norm.values.length * 3]]
+                                ),
+                                new XML.Tag("technique_common",
+                                    new XML.Tag("accessor", [
+                                        new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
+                                    ], [["source", '#' + name + "-normals-array-" + i], ["count", norm.values.length], ["stride", 3]])
+                                )
+                            ], new XML.Attribute("id", name + "-normals-" + i)
+                        )));
+                    }
+                    if (c.props.TEXCOORD) {
+                        hasUVs = true;
+                        const texUVs = c.props.TEXCOORD;
+                        texUVs.forEach((UV, i) => sources.push(new XML.Tag("source",
+                            [
+                                new XML.Tag("float_array",
+                                    UV.values.map(v => `${v.u} ${1 - v.v}`).join(" "),
+                                    [["id", name + "-uv-array-" + i], ["count", UV.values.length * 2]]
+                                ),
+                                new XML.Tag("technique_common",
+                                    new XML.Tag("accessor", [
+                                        new XML.Tag("param", null, [["name", "S"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "T"], ["type", "float"]])
+                                    ], [["source", '#' + name + "-uv-array-" + i], ["count", UV.values.length], ["stride", 2]])
+                                )
+                            ], new XML.Attribute("id", name + "-texCoords-" + i)
+                        )));
+                    }
+                    if (c.props.COLOR) {
+                        hasColors = true;
+                        const colors = c.props.COLOR;
+                        colors.forEach((color, i) => sources.push(new XML.Tag("source",
+                            [
+                                new XML.Tag("float_array",
+                                    color.values.map(a => `${a.r} ${a.g} ${a.b} ${a.a}`).join(" "),
+                                    [["id", name + "-colors-array-" + i], ["count", color.values.length * 4]]
+                                ),
+                                new XML.Tag("technique_common",
+                                    new XML.Tag("accessor", [
+                                        new XML.Tag("param", null, [["name", "R"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "G"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "B"], ["type", "float"]]),
+                                        new XML.Tag("param", null, [["name", "A"], ["type", "float"]])
+                                    ], [["source", '#' + name + "-colors-array-" + i], ["count", color.values.length], ["stride", 4]])
+                                )
+                            ], new XML.Attribute("id", name + "-colors-" + i)
+                        )));
+                    }
+                    meshTag.appendChildren([
+                        new XML.Tag("vertices",
+                            new XML.Tag("input", null,
+                                [["semantic", "POSITION"], ["source", '#' + name + "-positions-0"]]
+                            ), new XML.Attribute("id", name + "-vertices")
+                        ), sources]);
+                    c.meshes.forEach((m, i) => {
+                        const mName = name + '-' + i;
+                        const coordID = c.props.TEXCOORD ? i % c.props.TEXCOORD.length : 0;
+
                         const includeNorms = m.triangles[0].dataA.normal !== undefined && hasNormals;
                         const includeUVs = m.triangles[0].dataA.texture !== undefined && hasUVs;
                         const includeColors = m.triangles[0].dataA.color !== undefined && hasColors;
-                        const triTag = new XML.Tag("triangles", null, [["material", m.material], ["count", m.triangles.length]]);
+                        const triTag = new XML.Tag("triangles", null,
+                            [["material", m.material], ["count", m.triangles.length], ["name", mName]]
+                        );
                         let o = 0;
                         if (hasVertices) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "VERTEX"], ["source", '#' + name + "-vertices"], ["offset", o++]]
+                            [["semantic", "VERTEX"], ["source", '#' + name + "-vertices-0"], ["offset", o++]]
                         ));
                         if (includeNorms) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "NORMAL"], ["source", '#' + name + "-normals"], ["offset", o++]]
+                            [["semantic", "NORMAL"], ["source", '#' + name + "-normals-0"], ["offset", o++]]
                         ));
                         if (includeUVs) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "TEXCOORD"], ["source", '#' + name + "-texCoords-0"], ["offset", o++], ["set", 0]]
+                            [["semantic", "TEXCOORD"], ["source", '#' + name + "-texCoords-" + coordID], ["offset", o++], ["set", coordID]]
                         ));
                         if (includeColors) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "COLOR"], ["source", '#' + name + "-colors"], ["offset", o++]]
+                            [["semantic", "COLOR"], ["source", '#' + name + "-colors-0"], ["offset", o++]]
                         ));
                         triTag.appendChildren(new XML.Tag("p", m.triangles.map(t => {
                             let tA = [t.A];
@@ -190,16 +203,9 @@ class SC3D {
                             return tA.concat(tB, tC).join(' ');
                         }).join(' ')));
                         //TODO: Figure out what to do with the other tex coord sets
-                        return new XML.Tag("mesh", [
-                            new XML.Tag("vertices",
-                                new XML.Tag("input", null,
-                                    [["semantic", "POSITION"], ["source", '#' + name + "-positions"]]
-                                ), new XML.Attribute("id", name + "-vertices")
-                            ),
-                            sources, triTag
-                        ]);
+                        meshTag.appendChildren(triTag);
                     });
-                    const tag = new XML.Tag("geometry", meshes, [["id", name], ["name", name]]);
+                    const tag = new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]);
                     return tag;
                     //TODO
                 })),
@@ -208,9 +214,18 @@ class SC3D {
                 this.findChunk("NODE") ? this.findChunk("NODE").nodes.map(n => {
                     const tag = new XML.Tag("node", null, [["id", n.name], ["type", "NODE"]]);
                     if (n.hasTarget) {
-                        tag.appendChildren([
-                            new XML.Tag("instance_geometry", null, new XML.Attribute("url", '#' + n.targetName)),
-                        ]);
+                        if (n.targetType !== "CAME") {
+                            const targetMeshes = n.chunk.container.chunks.find(c => c.type === n.targetName).meshes || [];
+                            tag.appendChildren(
+                                new XML.Tag("instance_geometry",
+                                    new XML.Tag("bind_material",
+                                        new XML.Tag("technique_common",
+                                            targetMeshes.map(m => new XML.Tag("instance_material", null,
+                                                [["symbol", m.material], ["target", "./character_materials.dae#" + m.material]])
+                                            ))),
+                                    new XML.Attribute("url", '#' + n.targetName))
+                            );
+                        }
                     } else {
 
                     }
