@@ -50,7 +50,9 @@ class XML {
 class XMLTag {
     /**
      * Defines a XML Tag
-     * @param {string} name  
+     * @param {string} name
+     * @param {string?|XMLTag|string[]|XMLTag[]} content
+     * @param {XMLAttribute?|Array.<string[]>} attributes
      */
     constructor(name, content, attributes) {
         if (typeof name !== "string" || !name) throw new TypeError("XML tag name must be a string");
@@ -77,11 +79,19 @@ class XMLTag {
         else if (content instanceof XMLTag) this.appendChildren(content);
         else if (Array.isArray(content)) content.forEach(t => this.appendChildren(t));
     }
+    /**
+     * Appends children tag/strings to this tag
+     * @param {string|XMLTag|string[]|XMLTag[]} tag 
+     */
     appendChildren(tag) {
         if (tag instanceof XMLTag || typeof tag === "string") this.content.push(tag);
         else if (Array.isArray(tag)) tag.forEach(t => this.appendChildren(t));
         return this;
     }
+    /**
+     * Sets the document root for this tag
+     * @param {XML} doc 
+     */
     setRoot(doc) {
         this.root = doc;
         this.content.filter(t => t instanceof XMLTag).forEach(t => t.setRoot(doc));
@@ -119,19 +129,23 @@ class XMLTag {
             }
             str += `${pretty && !sameLine ? '\n' + ' '.repeat(depth * 2) : ""}</${this.name}>`;
         }
-        //if (pretty) str += '\n';
         return str;
     }
 }
 
 class XMLAttribute {
+    /**
+     * Defines a XML tag attribute
+     * @param {string} name Name of the attribute
+     * @param {*} value Value of the attribute
+     */
     constructor(name, value) {
         const invType = "Invalid attribute type";
         if (typeof name === "string") {
             this.name = name;
             this.value = value;
         } else if (typeof name === "object") {
-            if (name.name && name.value && typeof name.name === "string") {
+            if (name.name && name.value !== undefined && typeof name.name === "string") {
                 this.name = name.name;
                 this.value = value;
             } else if (Array.isArray(name)) {
