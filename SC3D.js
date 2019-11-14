@@ -2,9 +2,13 @@
 /* eslint-env node, es6 */
 
 const XML = require("./XML");
+const fs = require("fs");
 const MAGIC = "SC3D";
 const CRCTable = new Uint32Array(256);
 let CRCInitialized = false;
+
+const importMap = new Map();
+let importPath = ".";
 
 function computeCRC(data, v) {
     //Fix JS weird signed stuff
@@ -32,6 +36,7 @@ function computeCRC(data, v) {
 class SC3D {
     /**
      * @param {Buffer} data 
+     * @param {string?} name
      */
     constructor(data, name) {
         this.name = name || "unknown";
@@ -39,8 +44,10 @@ class SC3D {
         if (data.compare(Buffer.from(MAGIC), 0, 3, 0, 3)) throw new TypeError("Invalid SC3D file");
         /** @type {SC3DChunk[]} */
         this.chunks = [];
+        this.loaded = false;
     }
     load() {
+        if (this.loaded) return this;
         let ptr = MAGIC.length;
         while (ptr < this.data.length && !this.findChunk("WEND")) {
             let len = this.data.readUInt32BE(ptr) + 12;
@@ -48,6 +55,10 @@ class SC3D {
             this.chunks.push(chunk.parse());
             ptr += len;
         }
+
+        const leftOver = this.data.length - ptr;
+        if (leftOver) console.warn(`ROOT-> ${leftOver} bytes unprocessed`);
+        this.loaded = true;
         return this;
     }
     findChunk(name) {
@@ -56,8 +67,33 @@ class SC3D {
     findChunks(name) {
         return this.chunks.filter(chk => chk.name === name);
     }
-    exportModel() {
-        //TODO
+    /**
+     * Exports a model as a COLLADA XML
+     * @param {SC3D?|SC3D[]} libraries List of libraries to include
+     */
+    exportModel(libraries) {
+        const libImages = new XML.Tag("library_images");
+        const libEffects = new XML.Tag("library_effects");
+        const libMaterials = new XML.Tag("library_materials");
+        const libGeometries = new XML.Tag("library_geometries");
+        const libControllers = new XML.Tag("library_controllers");
+        const libAnimations = new XML.Tag("library_animations");
+        const visualScene = new XML.Tag("visual_scene", null, [["id", "Scene"], ["name", "Scene"]]);
+        const libVisualScene = new XML.Tag("library_visual_scenes", visualScene);
+        const libCameras = new XML.Tag("library_cameras");
+        if (libraries instanceof SC3D) libraries.appendToLibrary(
+            libImages, libEffects, libMaterials, libGeometries,
+            libControllers, libAnimations, visualScene, libCameras
+        );
+        else if (Array.isArray(libraries)) libraries.filter(lib => lib instanceof SC3D)
+            .forEach(lib => lib.appendToLibrary(
+                libImages, libEffects, libMaterials, libGeometries,
+                libControllers, libAnimations, visualScene, libCameras
+            ));
+        this.appendToLibrary(
+            libImages, libEffects, libMaterials, libGeometries,
+            libControllers, libAnimations, visualScene, libCameras
+        );
         return new XML(new XML.Tag("COLLADA", [
             new XML.Tag("asset", [
                 new XML.Tag("contributor",
@@ -66,177 +102,350 @@ class SC3D {
                 new XML.Tag("created", new Date().toISOString()),
                 new XML.Tag("up_axis", "Y_UP")
             ]),
-            new XML.Tag("library_geometries", this.chunks.filter(c => c instanceof SC3DGeometry)
-                .map(c => {
-                    const name = c.type;
-                    const meshTag = new XML.Tag("mesh");
-
-                    const sources = [];
-                    let hasVertices = false;
-                    let hasNormals = false;
-                    let hasUVs = false;
-                    let hasColors = false;
-                    if (c.props.POSITION) {
-                        hasVertices = true;
-                        const verts = c.props.POSITION;
-                        verts.forEach((vert, i) => sources.push(new XML.Tag("source",
-                            [
-                                new XML.Tag("float_array",
-                                    vert.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
-                                    [["id", name + "-positions-array-" + i], ["count", vert.values.length * 3]]
-                                ),
-                                new XML.Tag("technique_common",
-                                    new XML.Tag("accessor", [
-                                        new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
-                                    ], [["source", '#' + name + "-positions-array-" + i], ["count", vert.values.length], ["stride", 3]])
-                                )
-                            ], new XML.Attribute("id", name + "-positions-" + i)
-                        )));
-                    }
-                    if (c.props.NORMAL) {
-                        hasNormals = true;
-                        const norms = c.props.NORMAL;
-                        norms.forEach((norm, i) => sources.push(new XML.Tag("source",
-                            [
-                                new XML.Tag("float_array",
-                                    norm.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
-                                    [["id", name + "-normals-array-" + i], ["count", norm.values.length * 3]]
-                                ),
-                                new XML.Tag("technique_common",
-                                    new XML.Tag("accessor", [
-                                        new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
-                                    ], [["source", '#' + name + "-normals-array-" + i], ["count", norm.values.length], ["stride", 3]])
-                                )
-                            ], new XML.Attribute("id", name + "-normals-" + i)
-                        )));
-                    }
-                    if (c.props.TEXCOORD) {
-                        hasUVs = true;
-                        const texUVs = c.props.TEXCOORD;
-                        texUVs.forEach((UV, i) => sources.push(new XML.Tag("source",
-                            [
-                                new XML.Tag("float_array",
-                                    UV.values.map(v => `${v.u} ${1 - v.v}`).join(" "),
-                                    [["id", name + "-uv-array-" + i], ["count", UV.values.length * 2]]
-                                ),
-                                new XML.Tag("technique_common",
-                                    new XML.Tag("accessor", [
-                                        new XML.Tag("param", null, [["name", "S"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "T"], ["type", "float"]])
-                                    ], [["source", '#' + name + "-uv-array-" + i], ["count", UV.values.length], ["stride", 2]])
-                                )
-                            ], new XML.Attribute("id", name + "-texCoords-" + i)
-                        )));
-                    }
-                    if (c.props.COLOR) {
-                        hasColors = true;
-                        const colors = c.props.COLOR;
-                        colors.forEach((color, i) => sources.push(new XML.Tag("source",
-                            [
-                                new XML.Tag("float_array",
-                                    color.values.map(a => `${a.r} ${a.g} ${a.b} ${a.a}`).join(" "),
-                                    [["id", name + "-colors-array-" + i], ["count", color.values.length * 4]]
-                                ),
-                                new XML.Tag("technique_common",
-                                    new XML.Tag("accessor", [
-                                        new XML.Tag("param", null, [["name", "R"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "G"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "B"], ["type", "float"]]),
-                                        new XML.Tag("param", null, [["name", "A"], ["type", "float"]])
-                                    ], [["source", '#' + name + "-colors-array-" + i], ["count", color.values.length], ["stride", 4]])
-                                )
-                            ], new XML.Attribute("id", name + "-colors-" + i)
-                        )));
-                    }
-                    meshTag.appendChildren([
-                        new XML.Tag("vertices",
-                            new XML.Tag("input", null,
-                                [["semantic", "POSITION"], ["source", '#' + name + "-positions-0"]]
-                            ), new XML.Attribute("id", name + "-vertices")
-                        ), sources]);
-                    c.meshes.forEach((m, i) => {
-                        const mName = name + '-' + i;
-                        const coordID = c.props.TEXCOORD ? i % c.props.TEXCOORD.length : 0;
-
-                        const includeNorms = m.triangles[0].dataA.normal !== undefined && hasNormals;
-                        const includeUVs = m.triangles[0].dataA.texture !== undefined && hasUVs;
-                        const includeColors = m.triangles[0].dataA.color !== undefined && hasColors;
-                        const triTag = new XML.Tag("triangles", null,
-                            [["material", m.material], ["count", m.triangles.length], ["name", mName]]
-                        );
-                        let o = 0;
-                        if (hasVertices) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "VERTEX"], ["source", '#' + name + "-vertices-0"], ["offset", o++]]
-                        ));
-                        if (includeNorms) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "NORMAL"], ["source", '#' + name + "-normals-0"], ["offset", o++]]
-                        ));
-                        if (includeUVs) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "TEXCOORD"], ["source", '#' + name + "-texCoords-" + coordID], ["offset", o++], ["set", coordID]]
-                        ));
-                        if (includeColors) triTag.appendChildren(new XML.Tag("input", null,
-                            [["semantic", "COLOR"], ["source", '#' + name + "-colors-0"], ["offset", o++]]
-                        ));
-                        triTag.appendChildren(new XML.Tag("p", m.triangles.map(t => {
-                            let tA = [t.A];
-                            let tB = [t.B];
-                            let tC = [t.C];
-                            if (includeNorms) {
-                                tA.push(t.dataA.normal);
-                                tB.push(t.dataB.normal);
-                                tC.push(t.dataC.normal);
-                            }
-                            if (includeUVs) {
-                                tA.push(t.dataA.texture);
-                                tB.push(t.dataB.texture);
-                                tC.push(t.dataC.texture);
-                            }
-                            if (includeColors) {
-                                tA.push(t.dataA.color);
-                                tB.push(t.dataB.color);
-                                tC.push(t.dataC.color);
-                            }
-                            return tA.concat(tB, tC).join(' ');
-                        }).join(' ')));
-                        //TODO: Figure out what to do with the other tex coord sets
-                        meshTag.appendChildren(triTag);
-                    });
-                    const tag = new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]);
-                    return tag;
-                    //TODO
-                })),
-            new XML.Tag("library_controllers"),//Include joints and bones and whatever here
-            new XML.Tag("library_visual_scenes", new XML.Tag("visual_scene",
-                this.findChunk("NODE") ? this.findChunk("NODE").nodes.map(n => {
-                    const tag = new XML.Tag("node", null, [["id", n.name], ["type", "NODE"]]);
-                    if (n.hasTarget) {
-                        if (n.targetType !== "CAME") {
-                            const targetMeshes = n.chunk.container.chunks.find(c => c.type === n.targetName).meshes || [];
-                            tag.appendChildren(
-                                new XML.Tag("instance_geometry",
-                                    new XML.Tag("bind_material",
-                                        new XML.Tag("technique_common",
-                                            targetMeshes.map(m => new XML.Tag("instance_material", null,
-                                                [["symbol", m.material], ["target", "./character_materials.dae#" + m.material]])
-                                            ))),
-                                    new XML.Attribute("url", '#' + n.targetName))
-                            );
-                        }
-                    } else {
-
-                    }
-                    return tag;
-                }) : null,
-                [["id", "Scene"], ["name", "Scene"]])),
+            libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, libVisualScene, libCameras,
             new XML.Tag("scene", new XML.Tag("instance_visual_scene", null, new XML.Attribute("url", "#Scene")))
         ], [
             ["xmlns", "http://www.collada.org/2005/11/COLLADASchema"],
             ["version", "1.4.1"]]
         )).generate(true);
+    }
+
+    /**
+     * Appends this SC3D to a library
+     * @param {XML.Tag} libImages 
+     * @param {XML.Tag} libEffects 
+     * @param {XML.Tag} libMaterials 
+     * @param {XML.Tag} libGeometries 
+     * @param {XML.Tag} libControllers 
+     * @param {XML.Tag} libAnimations 
+     * @param {XML.Tag} visualScene 
+     * @param {XML.Tag} libCameras 
+     */
+    appendToLibrary(libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras) {
+        this.chunks.forEach(c => {
+            if (c instanceof SC3DHeader) {
+                if (c.library) c.library.appendToLibrary(libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras);
+            } else if (c instanceof SC3DGeometry) {
+                const name = c.type;
+                const meshTag = new XML.Tag("mesh");
+
+                const sources = [];
+                let hasVertices = false;
+                let hasNormals = false;
+                let hasUVs = false;
+                let hasColors = false;
+                if (c.props.POSITION) {
+                    hasVertices = true;
+                    const verts = c.props.POSITION;
+                    verts.forEach((vert, i) => sources.push(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array",
+                                vert.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
+                                [["id", name + "-positions-array-" + i], ["count", vert.values.length * 3]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor", [
+                                    new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
+                                ], [["source", '#' + name + "-positions-array-" + i], ["count", vert.values.length], ["stride", 3]])
+                            )
+                        ], new XML.Attribute("id", name + "-positions-" + i)
+                    )));
+                }
+                if (c.props.NORMAL) {
+                    hasNormals = true;
+                    const norms = c.props.NORMAL;
+                    norms.forEach((norm, i) => sources.push(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array",
+                                norm.values.map(v => `${v.x} ${v.y} ${v.z}`).join(" "),
+                                [["id", name + "-normals-array-" + i], ["count", norm.values.length * 3]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor", [
+                                    new XML.Tag("param", null, [["name", "X"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "Y"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "Z"], ["type", "float"]])
+                                ], [["source", '#' + name + "-normals-array-" + i], ["count", norm.values.length], ["stride", 3]])
+                            )
+                        ], new XML.Attribute("id", name + "-normals-" + i)
+                    )));
+                }
+                if (c.props.TEXCOORD) {
+                    hasUVs = true;
+                    const texUVs = c.props.TEXCOORD;
+                    texUVs.forEach((UV, i) => sources.push(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array",
+                                UV.values.map(v => `${v.u} ${1 - v.v}`).join(" "),
+                                [["id", name + "-uv-array-" + i], ["count", UV.values.length * 2]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor", [
+                                    new XML.Tag("param", null, [["name", "S"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "T"], ["type", "float"]])
+                                ], [["source", '#' + name + "-uv-array-" + i], ["count", UV.values.length], ["stride", 2]])
+                            )
+                        ], new XML.Attribute("id", name + "-texCoords-" + i)
+                    )));
+                }
+                if (c.props.COLOR) {
+                    hasColors = true;
+                    const colors = c.props.COLOR;
+                    colors.forEach((color, i) => sources.push(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array",
+                                color.values.map(a => `${a.r} ${a.g} ${a.b} ${a.a}`).join(" "),
+                                [["id", name + "-colors-array-" + i], ["count", color.values.length * 4]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor", [
+                                    new XML.Tag("param", null, [["name", "R"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "G"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "B"], ["type", "float"]]),
+                                    new XML.Tag("param", null, [["name", "A"], ["type", "float"]])
+                                ], [["source", '#' + name + "-colors-array-" + i], ["count", color.values.length], ["stride", 4]])
+                            )
+                        ], new XML.Attribute("id", name + "-colors-" + i)
+                    )));
+                }
+                meshTag.appendChildren(
+                    [
+                        sources,
+                        new XML.Tag("vertices",
+                            new XML.Tag("input", null,
+                                [["semantic", "POSITION"], ["source", '#' + name + "-positions-0"]]
+                            ), new XML.Attribute("id", name + "-vertices")
+                        )]
+                );
+                c.meshes.forEach((m, i) => {
+                    const mName = name + '-' + i;
+                    const coordID = c.props.TEXCOORD ? i % c.props.TEXCOORD.length : 0;
+
+                    const includeNorms = m.triangles[0].dataA.normal !== undefined && hasNormals;
+                    const includeUVs = m.triangles[0].dataA.texture !== undefined && hasUVs;
+                    const includeColors = m.triangles[0].dataA.color !== undefined && hasColors;
+                    const triTag = new XML.Tag("triangles", null,
+                        [["material", m.material], ["count", m.triangles.length], ["name", mName]]
+                    );
+                    let o = 0;
+                    if (hasVertices) triTag.appendChildren(new XML.Tag("input", null,
+                        [["semantic", "VERTEX"], ["source", '#' + name + "-vertices-0"], ["offset", o++]]
+                    ));
+                    if (includeNorms) triTag.appendChildren(new XML.Tag("input", null,
+                        [["semantic", "NORMAL"], ["source", '#' + name + "-normals-0"], ["offset", o++]]
+                    ));
+                    if (includeUVs) triTag.appendChildren(new XML.Tag("input", null,
+                        [["semantic", "TEXCOORD"], ["source", '#' + name + "-texCoords-" + coordID], ["offset", o++], ["set", coordID]]
+                    ));
+                    if (includeColors) triTag.appendChildren(new XML.Tag("input", null,
+                        [["semantic", "COLOR"], ["source", '#' + name + "-colors-0"], ["offset", o++]]
+                    ));
+                    triTag.appendChildren(new XML.Tag("p", m.triangles.map(t => {
+                        let tA = [t.A];
+                        let tB = [t.B];
+                        let tC = [t.C];
+                        if (includeNorms) {
+                            tA.push(t.dataA.normal);
+                            tB.push(t.dataB.normal);
+                            tC.push(t.dataC.normal);
+                        }
+                        if (includeUVs) {
+                            tA.push(t.dataA.texture);
+                            tB.push(t.dataB.texture);
+                            tC.push(t.dataC.texture);
+                        }
+                        if (includeColors) {
+                            tA.push(t.dataA.color);
+                            tB.push(t.dataB.color);
+                            tC.push(t.dataC.color);
+                        }
+                        return tA.concat(tB, tC).join(' ');
+                    }).join(' ')));
+                    //TODO: Figure out what to do with the other tex coord sets
+                    meshTag.appendChildren(triTag);
+                });
+                libGeometries.appendChildren(new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]));
+                const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.type));
+                if (c.hasMatrix) skinTag.appendChildren(new XML.Tag("bind_shape_matrix", c.shapeMatrix.join(' ')));
+                skinTag.appendChildren(new XML.Tag("source",
+                    [
+                        new XML.Tag("Name_array",
+                            c.joints.map(j => j.name).join(' '),
+                            [["id", c.type + "-joints-array"], ["count", c.joints.length]]
+                        ),
+                        new XML.Tag("technique_common",
+                            new XML.Tag("accessor",
+                                new XML.Tag("param", null, [["name", "JOINT"], ["type", "name"]]),
+                                [["source", `#${c.type}-joints-array`], ["count", c.joints.length], ["stride", 1]]
+                            )
+                        )
+                    ], new XML.Attribute("id", c.type + "-joints")
+                ));
+                skinTag.appendChildren(new XML.Tag("source",
+                    [
+                        new XML.Tag("float_array",
+                            c.joints.map(j => j.matrix.join(' ')).join(' '),
+                            [["id", c.type + "-matrices-array"], ["count", c.joints.length * 4 * 4]]
+                        ),
+                        new XML.Tag("technique_common",
+                            new XML.Tag("accessor",
+                                new XML.Tag("param", null, [["name", "TRANSFORM"], ["type", ["float4x4"]]]),
+                                [["source", `#${c.type}-matrices-array`], ["count", c.joints.length], ["stride", 16]]
+                            )
+                        )
+                    ],
+                    new XML.Attribute("id", c.type + "-matrices")
+                ));
+                const weights = [];
+                const counts = [];
+                const weightData = [];
+                c.vertexWeights.forEach(w => {
+                    let count = 0;
+                    let temp = [[w.weightA, w.jointA], [w.weightB, w.jointB], [w.weightC, w.jointC], [w.weightD, w.jointD]];
+                    for (const pair of temp) {
+                        if (pair[0] === 0) continue;
+                        weightData.push(pair[1]);
+                        if (weights.includes(pair[0])) weightData.push(weights.indexOf(pair[0]));
+                        else weightData.push(weights.push(pair[0]) - 1);
+                        ++count;
+                    }
+                    counts.push(count);
+                });
+                skinTag.appendChildren(new XML.Tag("source",
+                    [
+                        new XML.Tag("float_array", weights.join(' '),
+                            [["id", c.type + "-weights-array"], ["count", weights.length]]
+                        ),
+                        new XML.Tag("technique_common",
+                            new XML.Tag("accessor",
+                                new XML.Tag("param", null, [["name", "WEIGHT"], ["type", ["float"]]]),
+                                [["source", `#${c.type}-weights-array`], ["count", weights.length], ["stride", 1]]
+                            )
+                        )
+                    ],
+                    new XML.Attribute("id", c.type + "-weights")
+                ));
+                skinTag.appendChildren(new XML.Tag("joints",
+                    [
+                        new XML.Tag("input", null, [["semantic", "JOINT"], ["source", `#${c.type}-joints`]]),
+                        new XML.Tag("input", null, [["semantic", "INV_BIND_MATRIX"], ["source", `#${c.type}-matrices`]])
+                    ]
+                ));
+                skinTag.appendChildren(new XML.Tag("vertex_weights",
+                    [
+                        new XML.Tag("input", null, [["semantic", "JOINT"], ["offset", 0], ["source", `#${c.type}-joints`]]),
+                        new XML.Tag("input", null, [["semantic", "WEIGHT"], ["offset", 1], ["source", `#${c.type}-weights`]]),
+                        new XML.Tag("vcount", counts.join(' ')),
+                        new XML.Tag("v", weightData.join(' '))
+                    ],
+                    new XML.Attribute("count", counts.length)
+                ));
+                libControllers.appendChildren(new XML.Tag("controller", skinTag,
+                    [["id", c.type + "-cont"], ["name", c.type + "-cont"]])
+                );
+            } else if (c instanceof SC3DNodeList) {
+                /**
+                 * Adds node data to a tag
+                 * @param {SC3DNode} node 
+                 * @param {XML.Tag} tag 
+                 */
+                const addNodeData = (node, tag) => {
+                    if (node.frames.length === 0) console.warn(`Node ${node.name} has no frames, skipping transformation data`);
+                    else {
+                        const nodeFrame = node.frames[0];
+                        const pos = nodeFrame.position;
+                        const rot = nodeFrame.rotation;
+                        const scale = nodeFrame.scale;
+                        tag.appendChildren(new XML.Tag("translate", `${pos.x} ${pos.y} ${pos.z}`, new XML.Attribute("sid", "location")));
+                        tag.appendChildren(new XML.Tag("rotate", `${rot.x} ${rot.y} ${rot.z} ${rot.w}`, new XML.Attribute("sid", "rotation")));
+                        tag.appendChildren(new XML.Tag("scale", `${scale.x} ${scale.y} ${scale.z}`, new XML.Attribute("sid", "scale")));
+                    }
+                    if (node.hasTarget) {
+                        let materials;
+                        if (node.targetType === "CONT" || node.targetType === "GEOM") {
+                            materials = new XML.Tag("bind_material",
+                                new XML.Tag("technique_common",
+                                    node.bindings.map(m => new XML.Tag("instance_material", null,
+                                        [["symbol", m.symbol], ["target", "#" + m.target]])
+                                    )));
+                        }
+                        if (node.targetType === "CONT") {
+                            tag.appendChildren(new XML.Tag("instance_controller",
+                                materials,
+                                new XML.Attribute("url", '#' + node.targetName + "-cont")));
+                        } else if (node.targetType === "GEOM") {
+                            tag.appendChildren(new XML.Tag("instance_geometry",
+                                materials,
+                                new XML.Attribute("url", '#' + node.targetName)));
+                        } else if (node.targetType === "CAME") {
+                            //TODO: Find out what to do here
+                        }
+                    }
+                    //TODO: Frames
+                };
+                /**
+                 * Recursively adds all node tags
+                 * @param {SC3DNode} node 
+                 * @param {XML.Tag} parent 
+                 * @param {boolean} isJoint 
+                 */
+                const recursiveAddTag = (node, parent, isJoint) => {
+                    const childTag = new XML.Tag("node", null,
+                        [ ["id", node.name], ["name", node.name], ["sid", node.name], ["type", isJoint ? "JOINT" : "NODE"]]
+                    );
+                    addNodeData(node, childTag);
+                    const children = c.nodes.filter(nc => nc.parent === node.name);
+                    children.forEach(nc => recursiveAddTag(nc, childTag, isJoint));
+                    parent.appendChildren(childTag);
+                };
+                const rootNodes = c.nodes.filter(n => !n.parent);
+                rootNodes.forEach((n, i) => {
+                    const nodeTag = new XML.Tag("node", null,
+                        [["id", n.name], ["name", n.name], ["sid", n.name], ["type", "NODE"]]
+                    );
+                    addNodeData(n, nodeTag);
+                    c.nodes.filter(nc => nc.parent === n.name).forEach(nc => recursiveAddTag(nc, nodeTag, !nc.hasTarget));
+                    visualScene.appendChildren(nodeTag);
+                });
+            } else if (c instanceof SC3DMaterial) {
+                //TODO: Figure out material data
+            }
+        });
+    }
+
+    static set importPath(path) {
+        importPath = path;
+    }
+
+    /**
+     * Imports a SC3D library
+     * @param {string} name 
+     * @returns {SC3D} imported library
+     */
+    static importLib(name) {
+        if (name instanceof SC3D) {
+            if (!name.name.endsWith(".scw")) name.name += ".scw";
+            if (!importMap.has(name.name)) importMap.set(name.name, name);
+            return name.load();
+        }
+        if (name.startsWith("sc3d/")) return this.importLib(name.replace("sc3d/", ""));
+        if (importMap.has(name)) return importMap.get(name);
+        else {
+            if (!name.endsWith(".scw")) name += ".scw";
+            const libPath = importPath + '/' + name;
+            if (fs.existsSync(libPath)) {
+                const libFile = new SC3D(fs.readFileSync(libPath), name);
+                importMap.set(name, libFile);
+                libFile.load();
+                return libFile;
+            } else if (fs.existsSync(importPath + "/sc3d/" + name)) {
+                importPath += "/sc3d";
+                return this.importLib(name);
+            }
+            else throw new ReferenceError("Failed to find library " + name);
+        }
     }
 
     static get Chunk() {
@@ -306,20 +515,35 @@ class SC3DChunk {
 class SC3DHeader extends SC3DChunk {
     constructor(item, c) {
         super(item, c);
-        this.val1 = this.data.readInt16BE(0);
-        this.val2 = this.data.readInt16BE(2);
-        this.val3 = this.data.readInt32BE(4);
-        const len = this.data.readUInt16BE(8);
+        let ptr = 0;
+        this.val1 = this.data.readInt16BE(ptr);
+        ptr += 2;
+        this.val2 = this.data.readInt16BE(ptr);
+        ptr += 2;
+        this.val3 = this.data.readInt32BE(ptr);
+        ptr += 4;
         if (this.val1 !== 2) {
-            console.warn(`v1{${this.val1}} != 2`);
+            console.log(`H v1{${this.val1}} != 2`);
             debugger;
         }
         if (this.val2 !== 30) {
-            console.warn(`v2{${this.val2}} != 30`);
+            console.log(`H v2{${this.val2}} != 30`);
             debugger;
         }
-        //console.log(`H -> ${this.val3}`);
-        this.string = this.data.toString("utf8", 10, 10 + len);
+        const len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.libName = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
+        this.val3 = this.data.readUInt8(ptr++);
+        if (this.val3 !== 0) console.log(`H v3{${this.val3}} != 0`);
+        /** @type {SC3D?} */
+        this.library = null;
+        if (this.libName) {
+            console.log(`H [str] = ${this.libName}`);
+            this.library = SC3D.importLib(this.libName);
+        }
+        const leftOver = this.length - ptr;
+        if (leftOver) console.warn(`H-> ${leftOver} bytes unprocessed`);
     }
 }
 
@@ -334,6 +558,7 @@ class SC3DGeometry extends SC3DChunk {
         ptr += 2;
         this.group = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
+        if (this.group) console.log(`G #${this.type}: G=${this.group}`);
         this.props = {};
         let propCount = this.data.readUInt8(ptr++);
         this.meshes = [];
@@ -386,21 +611,17 @@ class SC3DGeometry extends SC3DChunk {
             vertW.jointB = this.data.readUInt8(ptr++);
             vertW.jointC = this.data.readUInt8(ptr++);
             vertW.jointD = this.data.readUInt8(ptr++);
-            vertW.weightA = this.data.readInt16BE(ptr);
+            vertW.weightA = this.data.readUInt16BE(ptr) / 0xFFFF;
             ptr += 2;
-            vertW.weightB = this.data.readInt16BE(ptr);
+            vertW.weightB = this.data.readUInt16BE(ptr) / 0xFFFF;
             ptr += 2;
-            vertW.weightC = this.data.readInt16BE(ptr);
+            vertW.weightC = this.data.readUInt16BE(ptr) / 0xFFFF;
             ptr += 2;
-            vertW.weightD = this.data.readInt16BE(ptr);
+            vertW.weightD = this.data.readUInt16BE(ptr) / 0xFFFF;
             ptr += 2;
             this.vertexWeights.push(vertW);
         }
         this.meshCount = this.data.readUInt8(ptr++);
-        if (this.meshCount !== 1) {
-            console.warn(`G[${this.container.chunks.length}] v2{${this.meshCount}} != 1`);
-            debugger;
-        }
         for (let i = 0; i < this.meshCount; ++i) {
             len = this.data.readUInt16BE(ptr);
             ptr += 2;
@@ -483,9 +704,8 @@ class SC3DGeometry extends SC3DChunk {
 
     static readMatrix4(data, ptr) {
         let matrix = [];
-        for (let i = 0, x = 0, y = 0; i < 4 * 4; ++i, x = i % 4, y = (i / 4) | 0) {
-            if (!matrix[x]) matrix[x] = [];
-            matrix[x][y] = data.readFloatBE(ptr + i * 4);
+        for (let i = 0; i < 4 * 4; ++i) {
+            matrix[i] = data.readFloatBE(ptr + i * 4);
         }
         return matrix;
     }
@@ -501,6 +721,7 @@ class SC3DMesh {
         this.material = material;
         this.str1 = str1;
         this.triangles = triangles;
+        if (str1) console.log(`M S1 = ${str1}`);
     }
 
     static readTriangles(data, count, mode) {
@@ -554,6 +775,7 @@ class SC3DNodeList extends SC3DChunk {
      */
     constructor(item, c) {
         super(item, c);
+        /** @type {SC3DNode[]} */
         this.nodes = [];
         let nodeCount = this.data.readUInt16BE(0);
         let ptr = 2;
@@ -591,21 +813,28 @@ class SC3DNode {
             ptr += 2;
             this.targetName = this.data.toString("utf8", ptr, ptr + len);
             ptr += len;
-            let targetCount = this.data.readUInt16BE(ptr);
+            let bindCount = this.data.readUInt16BE(ptr);
             ptr += 2;
-            /** @type {string[]} */
-            this.targets = [];
-            for (let i = 0; i < targetCount * 2; ++i) {
+            this.bindings = [];
+            for (let i = 0; i < bindCount; ++i) {
                 len = this.data.readUInt16BE(ptr);
                 ptr += 2;
-                this.targets.push(this.data.toString("utf8", ptr, ptr + len));
+                const symbol = this.data.toString("utf8", ptr, ptr + len);
                 ptr += len;
+                len = this.data.readUInt16BE(ptr);
+                ptr += 2;
+                const target = this.data.toString("utf8", ptr, ptr + len);
+                ptr += len;
+                this.bindings.push({ symbol, target });
             }
         }
         let frameCount = this.data.readUInt16BE(ptr);
         ptr += 2;
+        /** @type {SC3DFrame[]} */
+        this.frames = [];
         if (frameCount) {
             let flags = this.data.readUInt8(ptr++);
+            this.animationFlags = flags;
             this.hasScaleX = !!(flags & (1 << 6));
             this.hasScaleY = !!(flags & (1 << 5));
             this.hasScaleZ = !!(flags & (1 << 4));
@@ -613,8 +842,6 @@ class SC3DNode {
             this.hasPositionY = !!(flags & (1 << 2));
             this.hasPositionZ = !!(flags & (1 << 1));
             this.hasRotation = !!(flags & (1 << 0));
-            /** @type {SC3DFrame[]} */
-            this.frames = [];
             const posCount = (this.hasPositionX ? 1 : 0) + (this.hasPositionY ? 1 : 0) + (this.hasPositionZ ? 1 : 0);
             const scaleCount = (this.hasScaleX ? 1 : 0) + (this.hasScaleY ? 1 : 0) + (this.hasScaleZ ? 1 : 0);
             for (let i = 0; i < frameCount; ++i) {
@@ -707,14 +934,16 @@ class SC3DCamera extends SC3DChunk {
         ptr += len;
         this.val1 = this.data.readFloatBE(ptr);
         ptr += 4;
-        this.val2 = this.data.readFloatBE(ptr);
+        this.xFOV = this.data.readFloatBE(ptr);
         ptr += 4;
-        this.val3 = this.data.readFloatBE(ptr);
+        this.aspectRatio = this.data.readFloatBE(ptr);
         ptr += 4;
-        this.val4 = this.data.readFloatBE(ptr);
+        this.zNear = this.data.readFloatBE(ptr);
         ptr += 4;
-        this.val5 = this.data.readFloatBE(ptr);
+        this.zFar = this.data.readFloatBE(ptr);
         ptr += 4;
+        console.log(`CAM: [${this.val1} ${this.xFOV} ${this.aspectRatio} ${this.zNear} ${this.zFar}]`);
+        if (this.val1 !== 0) console.log(`C v1{${this.val1}} != 0`);
         //throw new Error("TODO UNIMPL CAMERA");
     }
 }
