@@ -364,13 +364,13 @@ class SC3D {
                     }
                     if (node.hasTarget) {
                         let materials;
-                        if (node.targetType === "CONT" || node.targetType === "GEOM") {
+                        /* if (node.targetType === "CONT" || node.targetType === "GEOM") {
                             materials = new XML.Tag("bind_material",
                                 new XML.Tag("technique_common",
                                     node.bindings.map(m => new XML.Tag("instance_material", null,
                                         [["symbol", m.symbol], ["target", "#" + m.target]])
                                     )));
-                        }
+                        } */
                         if (node.targetType === "CONT") {
                             tag.appendChildren(new XML.Tag("instance_controller",
                                 materials,
@@ -388,20 +388,21 @@ class SC3D {
                 /**
                  * Recursively adds all node tags
                  * @param {SC3DNode} node 
-                 * @param {XML.Tag} parent 
+                 * @param {XML.Tag} parentTag 
                  * @param {boolean} isJoint 
                  */
-                const recursiveAddTag = (node, parent, isJoint) => {
+                const recursiveAddTag = (node, parentTag) => {
+                    const children = c.nodes.filter(nc => nc.parent === node.name);
+                    const isJoint = !node.hasTarget && !children.find(c => c.hasTarget);
                     const childTag = new XML.Tag("node", null,
-                        [ ["id", node.name], ["name", node.name], ["sid", node.name], ["type", isJoint ? "JOINT" : "NODE"]]
+                        [["id", node.name], ["name", node.name], ["sid", node.name], ["type", isJoint ? "JOINT" : "NODE"]]
                     );
                     addNodeData(node, childTag);
-                    const children = c.nodes.filter(nc => nc.parent === node.name);
-                    children.forEach(nc => recursiveAddTag(nc, childTag, isJoint));
-                    parent.appendChildren(childTag);
+                    children.forEach(nc => recursiveAddTag(nc, childTag));
+                    parentTag.appendChildren(childTag);
                 };
-                const rootNodes = c.nodes.filter(n => !n.parent);
-                rootNodes.forEach((n, i) => {
+                const rootNodes = c.nodes.filter(n => !n.parent && n.name);
+                rootNodes.forEach(n => {
                     const nodeTag = new XML.Tag("node", null,
                         [["id", n.name], ["name", n.name], ["sid", n.name], ["type", "NODE"]]
                     );
@@ -920,6 +921,79 @@ class SC3DMaterial extends SC3DChunk {
         ptr += len;
         this.val1 = this.data.readUInt8(ptr++);
         this.useAmbientTexture = !!this.data.readUInt8(ptr++);
+        if (this.useAmbientTexture) {
+            len = this.data.readUInt16BE(ptr);
+            ptr += 2;
+            this.ambientTexture = this.data.toString("utf8", ptr, ptr + len);
+            ptr += len;
+        } else {
+            this.ambientColor = this.data.readUInt32BE(ptr);
+            ptr += 4;
+        }
+        this.useDiffuseTexture = !!this.data.readUInt8(ptr++);
+        if (this.useDiffuseTexture) {
+            len = this.data.readUInt16BE(ptr);
+            ptr += 2;
+            this.diffuseTexture = this.data.toString("utf8", ptr, ptr + len);
+            ptr += len;
+        } else {
+            this.diffuseColor = this.data.readUInt32BE(ptr);
+            ptr += 4;
+        }
+        this.useStencilTexture = !!this.data.readUInt8(ptr++);
+        if (this.useStencilTexture) {
+            len = this.data.readUInt16BE(ptr);
+            ptr += 2;
+            this.stencilTexture = this.data.toString("utf8", ptr, ptr + len);
+            ptr += len;
+        } else {
+            this.stencilColor = this.data.readUInt32BE(ptr);
+            ptr += 4;
+        }
+        len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.str1 = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
+        len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.str2 = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
+        this.useColorizeTexture = !!this.data.readUInt8(ptr++);
+        if (this.useColorizeTexture) {
+            len = this.data.readUInt16BE(ptr);
+            ptr += 2;
+            this.colorizeTexture = this.data.toString("utf8", ptr, ptr + len);
+            ptr += len;
+        } else {
+            this.colorizeColor = this.data.readUInt32BE(ptr);
+            ptr += 4;
+        }
+        this.useEmissionTexture = !!this.data.readUInt8(ptr++);
+        if (this.useEmissionTexture) {
+            len = this.data.readUInt16BE(ptr);
+            ptr += 2;
+            this.emissionTexture = this.data.toString("utf8", ptr, ptr + len);
+            ptr += len;
+        } else {
+            this.emissionColor = this.data.readUInt32BE(ptr);
+            ptr += 4;
+        }
+        len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.str3 = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
+        this.val2 = this.data.readFloatBE(ptr);
+        ptr += 4;
+        this.val3 = this.data.readFloatBE(ptr);
+        ptr += 4;
+        len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.diffuseLightmap = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
+        len = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        this.specularLightmap = this.data.toString("utf8", ptr, ptr + len);
+        ptr += len;
         //TODO continue this
         //throw new Error("TODO UNIMPL MATERIAL");
     }
