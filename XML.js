@@ -84,7 +84,8 @@ class XMLTag {
      * @param {string|XMLTag|string[]|XMLTag[]} tag 
      */
     appendChildren(tag) {
-        if (tag instanceof XMLTag || typeof tag === "string") this.content.push(tag);
+        if (tag instanceof XMLTag) this.content.push(tag);
+        else if (tag && typeof tag === "string") tag.replace(/\r/g, "").split('\n').forEach(l => this.content.push(l));
         else if (Array.isArray(tag)) tag.forEach(t => this.appendChildren(t));
         return this;
     }

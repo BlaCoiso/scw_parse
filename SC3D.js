@@ -106,7 +106,9 @@ class SC3D {
             new XML.Tag("scene", new XML.Tag("instance_visual_scene", null, new XML.Attribute("url", "#Scene")))
         ], [
             ["xmlns", "http://www.collada.org/2005/11/COLLADASchema"],
-            ["version", "1.4.1"]]
+            ["version", "1.4.1"],
+            ["xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance"]
+        ]
         )).generate(true);
     }
 
@@ -126,7 +128,7 @@ class SC3D {
             if (c instanceof SC3DHeader) {
                 if (c.library) c.library.appendToLibrary(libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras);
             } else if (c instanceof SC3DGeometry) {
-                const name = c.type;
+                const name = c.geoName;
                 const meshTag = new XML.Tag("mesh");
 
                 const sources = [];
@@ -267,36 +269,36 @@ class SC3D {
                     meshTag.appendChildren(triTag);
                 });
                 libGeometries.appendChildren(new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]));
-                const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.type));
+                const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.geoName));
                 if (c.hasMatrix) skinTag.appendChildren(new XML.Tag("bind_shape_matrix", c.shapeMatrix.join(' ')));
                 skinTag.appendChildren(new XML.Tag("source",
                     [
                         new XML.Tag("Name_array",
                             c.joints.map(j => j.name).join(' '),
-                            [["id", c.type + "-joints-array"], ["count", c.joints.length]]
+                            [["id", c.geoName + "-joints-array"], ["count", c.joints.length]]
                         ),
                         new XML.Tag("technique_common",
                             new XML.Tag("accessor",
                                 new XML.Tag("param", null, [["name", "JOINT"], ["type", "name"]]),
-                                [["source", `#${c.type}-joints-array`], ["count", c.joints.length], ["stride", 1]]
+                                [["source", `#${c.geoName}-joints-array`], ["count", c.joints.length], ["stride", 1]]
                             )
                         )
-                    ], new XML.Attribute("id", c.type + "-joints")
+                    ], new XML.Attribute("id", c.geoName + "-joints")
                 ));
                 skinTag.appendChildren(new XML.Tag("source",
                     [
                         new XML.Tag("float_array",
                             c.joints.map(j => j.matrix.join(' ')).join(' '),
-                            [["id", c.type + "-matrices-array"], ["count", c.joints.length * 4 * 4]]
+                            [["id", c.geoName + "-matrices-array"], ["count", c.joints.length * 4 * 4]]
                         ),
                         new XML.Tag("technique_common",
                             new XML.Tag("accessor",
                                 new XML.Tag("param", null, [["name", "TRANSFORM"], ["type", ["float4x4"]]]),
-                                [["source", `#${c.type}-matrices-array`], ["count", c.joints.length], ["stride", 16]]
+                                [["source", `#${c.geoName}-matrices-array`], ["count", c.joints.length], ["stride", 16]]
                             )
                         )
                     ],
-                    new XML.Attribute("id", c.type + "-matrices")
+                    new XML.Attribute("id", c.geoName + "-matrices")
                 ));
                 const weights = [];
                 const counts = [];
@@ -316,34 +318,34 @@ class SC3D {
                 skinTag.appendChildren(new XML.Tag("source",
                     [
                         new XML.Tag("float_array", weights.join(' '),
-                            [["id", c.type + "-weights-array"], ["count", weights.length]]
+                            [["id", c.geoName + "-weights-array"], ["count", weights.length]]
                         ),
                         new XML.Tag("technique_common",
                             new XML.Tag("accessor",
                                 new XML.Tag("param", null, [["name", "WEIGHT"], ["type", ["float"]]]),
-                                [["source", `#${c.type}-weights-array`], ["count", weights.length], ["stride", 1]]
+                                [["source", `#${c.geoName}-weights-array`], ["count", weights.length], ["stride", 1]]
                             )
                         )
                     ],
-                    new XML.Attribute("id", c.type + "-weights")
+                    new XML.Attribute("id", c.geoName + "-weights")
                 ));
                 skinTag.appendChildren(new XML.Tag("joints",
                     [
-                        new XML.Tag("input", null, [["semantic", "JOINT"], ["source", `#${c.type}-joints`]]),
-                        new XML.Tag("input", null, [["semantic", "INV_BIND_MATRIX"], ["source", `#${c.type}-matrices`]])
+                        new XML.Tag("input", null, [["semantic", "JOINT"], ["source", `#${c.geoName}-joints`]]),
+                        new XML.Tag("input", null, [["semantic", "INV_BIND_MATRIX"], ["source", `#${c.geoName}-matrices`]])
                     ]
                 ));
                 skinTag.appendChildren(new XML.Tag("vertex_weights",
                     [
-                        new XML.Tag("input", null, [["semantic", "JOINT"], ["offset", 0], ["source", `#${c.type}-joints`]]),
-                        new XML.Tag("input", null, [["semantic", "WEIGHT"], ["offset", 1], ["source", `#${c.type}-weights`]]),
+                        new XML.Tag("input", null, [["semantic", "JOINT"], ["offset", 0], ["source", `#${c.geoName}-joints`]]),
+                        new XML.Tag("input", null, [["semantic", "WEIGHT"], ["offset", 1], ["source", `#${c.geoName}-weights`]]),
                         new XML.Tag("vcount", counts.join(' ')),
                         new XML.Tag("v", weightData.join(' '))
                     ],
                     new XML.Attribute("count", counts.length)
                 ));
                 libControllers.appendChildren(new XML.Tag("controller", skinTag,
-                    [["id", c.type + "-cont"], ["name", c.type + "-cont"]])
+                    [["id", c.geoName + "-cont"], ["name", c.geoName + "-cont"]])
                 );
             } else if (c instanceof SC3DNodeList) {
                 /**
@@ -414,6 +416,10 @@ class SC3D {
                 //TODO: Figure out material data
             }
         });
+    }
+
+    toString() {
+        return `SC3D ${this.name}: ${this.chunks.length} chunks: ${this.chunks.length ? '\n' + this.chunks.map(c => '\t' + c.toString().replace(/\n/g, "\n\t")).join('\n') : ""}`;
     }
 
     static set importPath(path) {
@@ -499,17 +505,24 @@ class SC3DChunk {
         return this;
     }
 
+    toString() {
+        return `${this.name}[${this.length}] {CRC=${this.CRC.toString(16).padStart(8, '0')}}`;
+    }
+
     static get Header() {
         return SC3DHeader;
     }
     static get Geometry() {
         return SC3DGeometry;
     }
-    static get Node() {
+    static get NodeList() {
         return SC3DNodeList;
     }
     static get Camera() {
         return SC3DCamera;
+    }
+    static get Material() {
+        return SC3DMaterial;
     }
 }
 
@@ -523,28 +536,20 @@ class SC3DHeader extends SC3DChunk {
         ptr += 2;
         this.val3 = this.data.readInt32BE(ptr);
         ptr += 4;
-        if (this.val1 !== 2) {
-            console.log(`H v1{${this.val1}} != 2`);
-            debugger;
-        }
-        if (this.val2 !== 30) {
-            console.log(`H v2{${this.val2}} != 30`);
-            debugger;
-        }
         const len = this.data.readUInt16BE(ptr);
         ptr += 2;
         this.libName = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
-        this.val3 = this.data.readUInt8(ptr++);
-        if (this.val3 !== 0) console.log(`H v3{${this.val3}} != 0`);
+        this.val4 = this.data.readUInt8(ptr++);
         /** @type {SC3D?} */
         this.library = null;
-        if (this.libName) {
-            console.log(`H [str] = ${this.libName}`);
-            this.library = SC3D.importLib(this.libName);
-        }
+        if (this.libName) this.library = SC3D.importLib(this.libName);
         const leftOver = this.length - ptr;
         if (leftOver) console.warn(`H-> ${leftOver} bytes unprocessed`);
+    }
+
+    toString() {
+        return `${super.toString()}; lib=${this.libName}, v1W=${this.val1}, v2W=${this.val2}, v3D=${this.val3}, v4B=${this.val4}`;
     }
 }
 
@@ -553,15 +558,15 @@ class SC3DGeometry extends SC3DChunk {
         super(item, c);
         let len = this.data.readUInt16BE(0);
         let ptr = 2;
-        this.type = this.data.toString("utf8", ptr, ptr + len);
+        this.geoName = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
         len = this.data.readUInt16BE(ptr);
         ptr += 2;
         this.group = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
-        if (this.group) console.log(`G #${this.type}: G=${this.group}`);
         this.props = {};
         let propCount = this.data.readUInt8(ptr++);
+        /** @type {SC3DMesh[]} */
         this.meshes = [];
 
         for (let i = 0; i < propCount; ++i) {
@@ -703,6 +708,14 @@ class SC3DGeometry extends SC3DChunk {
         }
     }
 
+    toString() {
+        const chunkData = super.toString();
+        const geomData = `Geometry ${this.geoName}${this.group ? " <- " + this.group : ""}: ${this.meshes.length} meshes, ${this.joints.length} joints`;
+        return `${chunkData}; ${geomData}` +
+            (this.meshes.length ? "\n" + this.meshes.map(m => `\tMat: ${m.material}, s1=${m.str1}, ${m.triangles.length} triangles`).join('\n') : "") +
+            (this.joints.length ? "\n" + this.joints.map(j => "\tJoint: " + j.name).join('\n') : "");
+    }
+
     static readMatrix4(data, ptr) {
         let matrix = [];
         for (let i = 0; i < 4 * 4; ++i) {
@@ -717,14 +730,25 @@ class SC3DGeometry extends SC3DChunk {
 }
 
 class SC3DMesh {
+    /**
+     * @param {string} material 
+     * @param {string} str1 
+     * @param {array} triangles 
+     * @param {SC3DChunk} chunk 
+     */
     constructor(material, str1, triangles, chunk) {
         this.chunk = chunk;
         this.material = material;
         this.str1 = str1;
         this.triangles = triangles;
-        if (str1) console.log(`M S1 = ${str1}`);
     }
 
+    /**
+     * Reads the triangle list from the data
+     * @param {Buffer} data 
+     * @param {number} count 
+     * @param {number} mode 
+     */
     static readTriangles(data, count, mode) {
         const triSize = mode & 0xFF;
         const triMode = mode >> 8;
@@ -785,6 +809,11 @@ class SC3DNodeList extends SC3DChunk {
             ptr += node.ptrLen;
             this.nodes.push(node);
         }
+    }
+
+    toString() {
+        return `${super.toString()}; ${this.nodes.length} nodes` +
+            (this.nodes.length ? ":\n" + this.nodes.map(n => '\t' + n.toString().replace(/\n/g, "\n\t")).join('\n') : "");
     }
 }
 
@@ -888,6 +917,12 @@ class SC3DNode {
         }
         this.ptrLen = ptr;
     }
+
+    toString() {
+        const nodeInfo = `${this.name}${this.parent ? " <- " + this.parent : ""}: ${this.frames.length} frames`;
+        const targetInfo = `Target: ${this.hasTarget ? `${this.targetName} {${this.targetType}}` : "No target"}`;
+        return `${nodeInfo}, ${targetInfo}`;
+    }
 }
 
 class SC3DFrame {
@@ -913,7 +948,7 @@ class SC3DMaterial extends SC3DChunk {
         super(item, c);
         let len = this.data.readUInt16BE(0);
         let ptr = 2;
-        this.name = this.data.toString("utf8", ptr, ptr + len);
+        this.matName = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
         len = this.data.readUInt16BE(ptr);
         ptr += 2;
@@ -994,8 +1029,27 @@ class SC3DMaterial extends SC3DChunk {
         ptr += 2;
         this.specularLightmap = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
-        //TODO continue this
-        //throw new Error("TODO UNIMPL MATERIAL");
+        this.val4 = this.data.readFloatBE(ptr);
+        ptr += 4;
+        this.val5 = this.data.readUInt16BE(ptr);
+        ptr += 2;
+        const leftOver = this.length - ptr;
+        if (leftOver) console.warn(`M-> ${leftOver} bytes unprocessed`);
+    }
+
+    toString() {
+        const convertARGB = v => `ARGB: ${(v >> 24) & 0xFF}-${(v >> 16) & 0xFF}-${(v >> 8) & 0xFF}-${v & 0xFF}`;
+        const matData = [];
+        const unkData = ["v1B=" + this.val1, "v2F=" + this.val2, "v3F=" + this.val3, "v4F=" + this.val4, "v5W=" + this.val5, "st1=" + this.str1, "st2=" + this.str2, "st3=" + this.str3];
+        if (this.shader) matData.push("Shader: " + this.shader);
+        matData.push(this.useAmbientTexture ? "AmbientTex: " + this.ambientTexture : "AmbientCol: " + convertARGB(this.ambientColor));
+        matData.push(this.useDiffuseTexture ? "DiffuseTex: " + this.diffuseTexture : "DiffuseCol: " + convertARGB(this.diffuseColor));
+        matData.push(this.useStencilTexture ? "StencilTex: " + this.stencilTexture : "StencilCol: " + convertARGB(this.stencilColor));
+        matData.push(this.useColorizeTexture ? "ColorizeTex: " + this.colorizeTexture : "ColorizeCol: " + convertARGB(this.colorizeColor));
+        matData.push(this.useEmissionTexture ? "EmissionTex: " + this.emissionTexture : "EmissionCol: " + convertARGB(this.emissionColor));
+        matData.push("DiffuseLM: " + this.diffuseLightmap);
+        matData.push("SpecularLM: " + this.specularLightmap);
+        return `${super.toString()}; Material ${this.matName}: ${matData.join(", ")}\n\tUnknown data: ${unkData.join(", ")}`;
     }
 }
 
@@ -1004,7 +1058,7 @@ class SC3DCamera extends SC3DChunk {
         super(item, c);
         let len = this.data.readUInt16BE(0);
         let ptr = 2;
-        this.name = this.data.toString("utf8", ptr, ptr + len);
+        this.camName = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
         this.val1 = this.data.readFloatBE(ptr);
         ptr += 4;
@@ -1016,9 +1070,12 @@ class SC3DCamera extends SC3DChunk {
         ptr += 4;
         this.zFar = this.data.readFloatBE(ptr);
         ptr += 4;
-        console.log(`CAM: [${this.val1} ${this.xFOV} ${this.aspectRatio} ${this.zNear} ${this.zFar}]`);
-        if (this.val1 !== 0) console.log(`C v1{${this.val1}} != 0`);
-        //throw new Error("TODO UNIMPL CAMERA");
+        const leftOver = this.length - ptr;
+        if (leftOver) console.warn(`C-> ${leftOver} bytes unprocessed`);
+    }
+
+    toString() {
+        return `${super.toString()}; Camera ${this.camName}: xFOV=${this.xFOV}, aspR=${this.aspectRatio.toFixed(4)}, zNear=${this.zNear}, zFar=${this.zFar}, v1F=${this.val1}`;
     }
 }
 
