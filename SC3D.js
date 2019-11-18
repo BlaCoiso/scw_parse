@@ -94,10 +94,11 @@ class SC3D {
             libImages, libEffects, libMaterials, libGeometries,
             libControllers, libAnimations, visualScene, libCameras
         );
+
         return new XML(new XML.Tag("COLLADA", [
             new XML.Tag("asset", [
                 new XML.Tag("contributor",
-                    new XML.Tag("authoring_tool", "SC3D.js (BlaCoiso)")
+                    new XML.Tag("authoring_tool", `SC3D.js [${SC3D.getVersion()}] (BlaCoiso)`)
                 ),
                 new XML.Tag("created", new Date().toISOString()),
                 new XML.Tag("up_axis", "Y_UP")
@@ -269,6 +270,7 @@ class SC3D {
                     meshTag.appendChildren(triTag);
                 });
                 libGeometries.appendChildren(new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]));
+                if (c.joints && c.joints.length) {
                 const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.geoName));
                 if (c.hasMatrix) skinTag.appendChildren(new XML.Tag("bind_shape_matrix", c.shapeMatrix.join(' ')));
                 skinTag.appendChildren(new XML.Tag("source",
@@ -347,6 +349,7 @@ class SC3D {
                 libControllers.appendChildren(new XML.Tag("controller", skinTag,
                     [["id", c.geoName + "-cont"], ["name", c.geoName + "-cont"]])
                 );
+                }
             } else if (c instanceof SC3DNodeList) {
                 /**
                  * Adds node data to a tag
@@ -366,13 +369,13 @@ class SC3D {
                     }
                     if (node.hasTarget) {
                         let materials;
-                        /* if (node.targetType === "CONT" || node.targetType === "GEOM") {
+                        if (node.targetType === "CONT" || node.targetType === "GEOM") {
                             materials = new XML.Tag("bind_material",
                                 new XML.Tag("technique_common",
                                     node.bindings.map(m => new XML.Tag("instance_material", null,
                                         [["symbol", m.symbol], ["target", "#" + m.target]])
                                     )));
-                        } */
+                        }
                         if (node.targetType === "CONT") {
                             tag.appendChildren(new XML.Tag("instance_controller",
                                 materials,
@@ -413,13 +416,96 @@ class SC3D {
                     visualScene.appendChildren(nodeTag);
                 });
             } else if (c instanceof SC3DMaterial) {
-                //TODO: Figure out material data
+                const effectPhongTag = new XML.Tag("phong");
+                const effectProfileTag = new XML.Tag("profile_COMMON");
+                const effectTag = new XML.Tag("effect", effectProfileTag, new XML.Attribute("id", c.matName + "-effect"));
+                let matTexIdx = 0;
+                let tempTexName;
+                const addTexture = (tex, imgName, addImg) => {
+                    let img = imgName;
+                    if (!imgName) img = tex.replace(/\.pvr.*$/, ".png");
+                    if (!img.endsWith(".png")) img += ".png";
+                    effectProfileTag.appendChildren([
+                        new XML.Tag("newparam",
+                            new XML.Tag("surface",
+                                new XML.Tag("init_from", tex),
+                                new XML.Attribute("type", "2D")
+                            ),
+                            new XML.Attribute("sid", tex + "-surface")),
+                        new XML.Tag("newparam",
+                            new XML.Tag("sampler2D",
+                                new XML.Tag("source", tex + "-surface")
+                            ),
+                            new XML.Attribute("sid", tex + "-sampler"))
+
+                    ]);
+                    if (addImg !== false) libImages.appendChildren(new XML.Tag("image",
+                        new XML.Tag("init_from", img),
+                        [["id", tex], ["name", tex]]
+                    ));
+                };
+                if (c.ambientColor) effectPhongTag.appendChildren(new XML.Tag("ambient",
+                    new XML.Tag("color", SC3DMaterial.getRGBA(c.ambientColor).join(' '))
+                ));
+                else if (c.ambientTexture) {
+                    if (c.ambientTexture === '.') {
+                        tempTexName = c.matName + "_tex_" + matTexIdx++;
+                        addTexture(tempTexName, c.matName + "_tex", matTexIdx === 1);
+                        effectPhongTag.appendChildren(new XML.Tag("ambient",
+                            new XML.Tag("texture", null, [["texture", tempTexName + "-sampler"], ["texcoord", "UVMap"]])
+                        ));
+                    } else {
+                        addTexture(c.ambientTexture);
+                        effectPhongTag.appendChildren(new XML.Tag("ambient",
+                            new XML.Tag("texture", null, [["texture", c.ambientTexture + "-sampler"], ["texcoord", "Normal"]])
+                        ));
+                    }
+                }
+                if (c.diffuseColor) effectPhongTag.appendChildren(new XML.Tag("diffuse",
+                    new XML.Tag("color", SC3DMaterial.getRGBA(c.diffuseColor).join(' '))
+                ));
+                else if (c.diffuseTexture) {
+                    if (c.diffuseTexture === '.') {
+                        tempTexName = c.matName + "_tex_" + matTexIdx++;
+                        addTexture(tempTexName, c.matName + "_tex", matTexIdx === 1);
+                        effectPhongTag.appendChildren(new XML.Tag("diffuse",
+                            new XML.Tag("texture", null, [["texture", tempTexName + "-sampler"], ["texcoord", "UVMap"]])
+                        ));
+                    } else {
+                        addTexture(c.diffuseTexture);
+                        effectPhongTag.appendChildren(new XML.Tag("diffuse",
+                            new XML.Tag("texture", null, [["texture", c.diffuseTexture + "-sampler"], ["texcoord", "Normal"]])
+                        ));
+                    }
+                }
+                effectPhongTag.appendChildren(new XML.Tag("index_of_refraction", new XML.Tag("float", "1")))
+                effectProfileTag.appendChildren(new XML.Tag("technique", effectPhongTag, new XML.Attribute("sid", "common")));
+                libEffects.appendChildren(effectTag);
+                libMaterials.appendChildren(new XML.Tag("material",
+                    new XML.Tag("instance_effect", null, new XML.Attribute("url", `#${c.matName}-effect`)),
+                    [["id", c.matName], ["name", c.matName]]
+                ));
+                //TODO: Figure out what exactly can be done with the stencil
+                //TODO: Figure out more stuff
+            } else if (c instanceof SC3DCamera) {
+                libCameras.appendChildren(new XML.Tag("camera",
+                    new XML.Tag("optics", new XML.Tag("technique_common", new XML.Tag("perspective",
+                        [
+                            new XML.Tag("xfov", c.xFOV),
+                            new XML.Tag("aspect_ratio", c.aspectRatio),
+                            new XML.Tag("znear", c.zNear),
+                            new XML.Tag("zfar", c.zFar)
+                        ]
+                    ))),
+                    [["id", c.camName], ["name", c.camName]]
+                ));
             }
         });
     }
 
     toString() {
-        return `SC3D ${this.name}: ${this.chunks.length} chunks: ${this.chunks.length ? '\n' + this.chunks.map(c => '\t' + c.toString().replace(/\n/g, "\n\t")).join('\n') : ""}`;
+        return `SC3D ${this.name}: ${this.chunks.length} chunks: ` +
+            this.chunks.length ? '\n' + this.chunks.map(c => '\t' + c.toString().replace(/\n/g, "\n\t")).join('\n') : "";
     }
 
     static set importPath(path) {
@@ -457,6 +543,22 @@ class SC3D {
 
     static get Chunk() {
         return SC3DChunk;
+    }
+
+    static getVersion() {
+        if (this.hasVersion && typeof this.version === "string" && this.version) return this.version;
+        const { execSync } = require("child_process");
+        const execOpts = { cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: 10 * 1000 };
+        let version = "unknown-v0.0.2";
+        try {
+            version = "git-" + execSync("git rev-parse --short=10 HEAD", execOpts).replace(/[\n\r]/g, "");
+            version += '-' + execSync("git describe --tags", execOpts).split('\n')[0].replace('\r', "");
+        } catch (e) {
+            console.error("Failed to read version:", e);
+        }
+        this.hasVersion = true;
+        this.version = version;
+        return version;
     }
 }
 
@@ -530,7 +632,11 @@ class SC3DHeader extends SC3DChunk {
     constructor(item, c) {
         super(item, c);
         let ptr = 0;
-        this.val1 = this.data.readInt16BE(ptr);
+        this.version = this.data.readInt16BE(ptr);
+        const versionNames = ["BETA", "GLOBAL", "RELEASE2"];
+        if (this.version < 2) console.warn(`Attempting to parse older SC3D version ${this.version} (${versionNames[this.version]}), parsing may fail`);
+        else if (this.version > 2) console.warn(`Attempting to parse future SC3D version ${this.version}, parsing may fail or give incomplete results`);
+        //TODO: Add support for older versions
         ptr += 2;
         this.val2 = this.data.readInt16BE(ptr);
         ptr += 2;
@@ -549,7 +655,7 @@ class SC3DHeader extends SC3DChunk {
     }
 
     toString() {
-        return `${super.toString()}; lib=${this.libName}, v1W=${this.val1}, v2W=${this.val2}, v3D=${this.val3}, v4B=${this.val4}`;
+        return `${super.toString()}; lib=${this.libName}, v1W=${this.version}, v2W=${this.val2}, v3D=${this.val3}, v4B=${this.val4}`;
     }
 }
 
@@ -713,7 +819,7 @@ class SC3DGeometry extends SC3DChunk {
         const geomData = `Geometry ${this.geoName}${this.group ? " <- " + this.group : ""}: ${this.meshes.length} meshes, ${this.joints.length} joints`;
         return `${chunkData}; ${geomData}` +
             (this.meshes.length ? "\n" + this.meshes.map(m => `\tMat: ${m.material}, s1=${m.str1}, ${m.triangles.length} triangles`).join('\n') : "") +
-            (this.joints.length ? "\n" + this.joints.map(j => "\tJoint: " + j.name).join('\n') : "");
+            (this.joints.length ? "\n\tJoints: " + this.joints.map(j => j.name).join(", ") : "");
     }
 
     static readMatrix4(data, ptr) {
@@ -920,7 +1026,7 @@ class SC3DNode {
 
     toString() {
         const nodeInfo = `${this.name}${this.parent ? " <- " + this.parent : ""}: ${this.frames.length} frames`;
-        const targetInfo = `Target: ${this.hasTarget ? `${this.targetName} {${this.targetType}}` : "No target"}`;
+        const targetInfo = this.hasTarget ? `Target: ${this.targetName} {${this.targetType}}` : "No target";
         return `${nodeInfo}, ${targetInfo}`;
     }
 }
@@ -1015,7 +1121,7 @@ class SC3DMaterial extends SC3DChunk {
         }
         len = this.data.readUInt16BE(ptr);
         ptr += 2;
-        this.str3 = this.data.toString("utf8", ptr, ptr + len);
+        this.alphaTexture = this.data.toString("utf8", ptr, ptr + len);
         ptr += len;
         this.val2 = this.data.readFloatBE(ptr);
         ptr += 4;
@@ -1040,7 +1146,7 @@ class SC3DMaterial extends SC3DChunk {
     toString() {
         const convertARGB = v => `ARGB: ${(v >> 24) & 0xFF}-${(v >> 16) & 0xFF}-${(v >> 8) & 0xFF}-${v & 0xFF}`;
         const matData = [];
-        const unkData = ["v1B=" + this.val1, "v2F=" + this.val2, "v3F=" + this.val3, "v4F=" + this.val4, "v5W=" + this.val5, "st1=" + this.str1, "st2=" + this.str2, "st3=" + this.str3];
+        const unkData = ["v1B=" + this.val1, "v2F=" + this.val2, "v3F=" + this.val3, "v4F=" + this.val4, "v5W=" + this.val5, "st1=" + this.str1, "st2=" + this.str2, "st3=" + this.alphaTexture];
         if (this.shader) matData.push("Shader: " + this.shader);
         matData.push(this.useAmbientTexture ? "AmbientTex: " + this.ambientTexture : "AmbientCol: " + convertARGB(this.ambientColor));
         matData.push(this.useDiffuseTexture ? "DiffuseTex: " + this.diffuseTexture : "DiffuseCol: " + convertARGB(this.diffuseColor));
@@ -1050,6 +1156,10 @@ class SC3DMaterial extends SC3DChunk {
         matData.push("DiffuseLM: " + this.diffuseLightmap);
         matData.push("SpecularLM: " + this.specularLightmap);
         return `${super.toString()}; Material ${this.matName}: ${matData.join(", ")}\n\tUnknown data: ${unkData.join(", ")}`;
+    }
+
+    static getRGBA(v) {
+        return [(v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF, (v >> 24) & 0xFF];
     }
 }
 
