@@ -76,6 +76,7 @@ class XMLTag {
         }
         this.content = [];
         if (typeof content === "string") this.appendChildren(content);
+        else if (typeof content === "number" || typeof content === "boolean") this.appendChildren(String(content));
         else if (content instanceof XMLTag) this.appendChildren(content);
         else if (Array.isArray(content)) content.forEach(t => this.appendChildren(t));
     }

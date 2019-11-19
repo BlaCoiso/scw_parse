@@ -1,3 +1,9 @@
+/*
+ * SC3D.js: parser for .scw (SC3D) files from Brawl Stars
+ * Copyright (c) 2019, BlaCoiso
+ * This file and the scw_parse project is licensed under GPL v3.0
+*/
+
 /* eslint-disable no-debugger */
 /* eslint-env node, es6 */
 
@@ -81,19 +87,27 @@ class SC3D {
         const visualScene = new XML.Tag("visual_scene", null, [["id", "Scene"], ["name", "Scene"]]);
         const libVisualScene = new XML.Tag("library_visual_scenes", visualScene);
         const libCameras = new XML.Tag("library_cameras");
+        /** @type {Array<String>[]} */
+        const images = [];
         if (libraries instanceof SC3D) libraries.appendToLibrary(
-            libImages, libEffects, libMaterials, libGeometries,
+            images, libEffects, libMaterials, libGeometries,
             libControllers, libAnimations, visualScene, libCameras
         );
         else if (Array.isArray(libraries)) libraries.filter(lib => lib instanceof SC3D)
             .forEach(lib => lib.appendToLibrary(
-                libImages, libEffects, libMaterials, libGeometries,
+                images, libEffects, libMaterials, libGeometries,
                 libControllers, libAnimations, visualScene, libCameras
             ));
         this.appendToLibrary(
-            libImages, libEffects, libMaterials, libGeometries,
+            images, libEffects, libMaterials, libGeometries,
             libControllers, libAnimations, visualScene, libCameras
         );
+        //Filter images without duplicate IDs
+        images.filter((n, i) => images.findIndex(n2 => n2[0] === n[0]) === i)
+            .forEach(img => libImages.appendChildren(new XML.Tag("image",
+                new XML.Tag("init_from", img[1]),
+                [["id", img[0]], ["name", img[0]]]
+            )));
 
         return new XML(new XML.Tag("COLLADA", [
             new XML.Tag("asset", [
@@ -115,7 +129,7 @@ class SC3D {
 
     /**
      * Appends this SC3D to a library
-     * @param {XML.Tag} libImages 
+     * @param {Array<String>[]} images
      * @param {XML.Tag} libEffects 
      * @param {XML.Tag} libMaterials 
      * @param {XML.Tag} libGeometries 
@@ -124,10 +138,10 @@ class SC3D {
      * @param {XML.Tag} visualScene 
      * @param {XML.Tag} libCameras 
      */
-    appendToLibrary(libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras) {
+    appendToLibrary(images, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras) {
         this.chunks.forEach(c => {
             if (c instanceof SC3DHeader) {
-                if (c.library) c.library.appendToLibrary(libImages, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras);
+                if (c.library) c.library.appendToLibrary(images, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras);
             } else if (c instanceof SC3DGeometry) {
                 const name = c.geoName;
                 const meshTag = new XML.Tag("mesh");
@@ -271,84 +285,84 @@ class SC3D {
                 });
                 libGeometries.appendChildren(new XML.Tag("geometry", meshTag, [["id", name], ["name", name]]));
                 if (c.joints && c.joints.length) {
-                const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.geoName));
-                if (c.hasMatrix) skinTag.appendChildren(new XML.Tag("bind_shape_matrix", c.shapeMatrix.join(' ')));
-                skinTag.appendChildren(new XML.Tag("source",
-                    [
-                        new XML.Tag("Name_array",
-                            c.joints.map(j => j.name).join(' '),
-                            [["id", c.geoName + "-joints-array"], ["count", c.joints.length]]
-                        ),
-                        new XML.Tag("technique_common",
-                            new XML.Tag("accessor",
-                                new XML.Tag("param", null, [["name", "JOINT"], ["type", "name"]]),
-                                [["source", `#${c.geoName}-joints-array`], ["count", c.joints.length], ["stride", 1]]
+                    const skinTag = new XML.Tag("skin", null, new XML.Attribute("source", '#' + c.geoName));
+                    if (c.hasMatrix) skinTag.appendChildren(new XML.Tag("bind_shape_matrix", c.shapeMatrix.join(' ')));
+                    skinTag.appendChildren(new XML.Tag("source",
+                        [
+                            new XML.Tag("Name_array",
+                                c.joints.map(j => j.name).join(' '),
+                                [["id", c.geoName + "-joints-array"], ["count", c.joints.length]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor",
+                                    new XML.Tag("param", null, [["name", "JOINT"], ["type", "name"]]),
+                                    [["source", `#${c.geoName}-joints-array`], ["count", c.joints.length], ["stride", 1]]
+                                )
                             )
-                        )
-                    ], new XML.Attribute("id", c.geoName + "-joints")
-                ));
-                skinTag.appendChildren(new XML.Tag("source",
-                    [
-                        new XML.Tag("float_array",
-                            c.joints.map(j => j.matrix.join(' ')).join(' '),
-                            [["id", c.geoName + "-matrices-array"], ["count", c.joints.length * 4 * 4]]
-                        ),
-                        new XML.Tag("technique_common",
-                            new XML.Tag("accessor",
-                                new XML.Tag("param", null, [["name", "TRANSFORM"], ["type", ["float4x4"]]]),
-                                [["source", `#${c.geoName}-matrices-array`], ["count", c.joints.length], ["stride", 16]]
+                        ], new XML.Attribute("id", c.geoName + "-joints")
+                    ));
+                    skinTag.appendChildren(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array",
+                                c.joints.map(j => j.matrix.join(' ')).join(' '),
+                                [["id", c.geoName + "-matrices-array"], ["count", c.joints.length * 4 * 4]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor",
+                                    new XML.Tag("param", null, [["name", "TRANSFORM"], ["type", ["float4x4"]]]),
+                                    [["source", `#${c.geoName}-matrices-array`], ["count", c.joints.length], ["stride", 16]]
+                                )
                             )
-                        )
-                    ],
-                    new XML.Attribute("id", c.geoName + "-matrices")
-                ));
-                const weights = [];
-                const counts = [];
-                const weightData = [];
-                c.vertexWeights.forEach(w => {
-                    let count = 0;
-                    let temp = [[w.weightA, w.jointA], [w.weightB, w.jointB], [w.weightC, w.jointC], [w.weightD, w.jointD]];
-                    for (const pair of temp) {
-                        if (pair[0] === 0) continue;
-                        weightData.push(pair[1]);
-                        if (weights.includes(pair[0])) weightData.push(weights.indexOf(pair[0]));
-                        else weightData.push(weights.push(pair[0]) - 1);
-                        ++count;
-                    }
-                    counts.push(count);
-                });
-                skinTag.appendChildren(new XML.Tag("source",
-                    [
-                        new XML.Tag("float_array", weights.join(' '),
-                            [["id", c.geoName + "-weights-array"], ["count", weights.length]]
-                        ),
-                        new XML.Tag("technique_common",
-                            new XML.Tag("accessor",
-                                new XML.Tag("param", null, [["name", "WEIGHT"], ["type", ["float"]]]),
-                                [["source", `#${c.geoName}-weights-array`], ["count", weights.length], ["stride", 1]]
+                        ],
+                        new XML.Attribute("id", c.geoName + "-matrices")
+                    ));
+                    const weights = [];
+                    const counts = [];
+                    const weightData = [];
+                    c.vertexWeights.forEach(w => {
+                        let count = 0;
+                        let temp = [[w.weightA, w.jointA], [w.weightB, w.jointB], [w.weightC, w.jointC], [w.weightD, w.jointD]];
+                        for (const pair of temp) {
+                            if (pair[0] === 0) continue;
+                            weightData.push(pair[1]);
+                            if (weights.includes(pair[0])) weightData.push(weights.indexOf(pair[0]));
+                            else weightData.push(weights.push(pair[0]) - 1);
+                            ++count;
+                        }
+                        counts.push(count);
+                    });
+                    skinTag.appendChildren(new XML.Tag("source",
+                        [
+                            new XML.Tag("float_array", weights.join(' '),
+                                [["id", c.geoName + "-weights-array"], ["count", weights.length]]
+                            ),
+                            new XML.Tag("technique_common",
+                                new XML.Tag("accessor",
+                                    new XML.Tag("param", null, [["name", "WEIGHT"], ["type", ["float"]]]),
+                                    [["source", `#${c.geoName}-weights-array`], ["count", weights.length], ["stride", 1]]
+                                )
                             )
-                        )
-                    ],
-                    new XML.Attribute("id", c.geoName + "-weights")
-                ));
-                skinTag.appendChildren(new XML.Tag("joints",
-                    [
-                        new XML.Tag("input", null, [["semantic", "JOINT"], ["source", `#${c.geoName}-joints`]]),
-                        new XML.Tag("input", null, [["semantic", "INV_BIND_MATRIX"], ["source", `#${c.geoName}-matrices`]])
-                    ]
-                ));
-                skinTag.appendChildren(new XML.Tag("vertex_weights",
-                    [
-                        new XML.Tag("input", null, [["semantic", "JOINT"], ["offset", 0], ["source", `#${c.geoName}-joints`]]),
-                        new XML.Tag("input", null, [["semantic", "WEIGHT"], ["offset", 1], ["source", `#${c.geoName}-weights`]]),
-                        new XML.Tag("vcount", counts.join(' ')),
-                        new XML.Tag("v", weightData.join(' '))
-                    ],
-                    new XML.Attribute("count", counts.length)
-                ));
-                libControllers.appendChildren(new XML.Tag("controller", skinTag,
-                    [["id", c.geoName + "-cont"], ["name", c.geoName + "-cont"]])
-                );
+                        ],
+                        new XML.Attribute("id", c.geoName + "-weights")
+                    ));
+                    skinTag.appendChildren(new XML.Tag("joints",
+                        [
+                            new XML.Tag("input", null, [["semantic", "JOINT"], ["source", `#${c.geoName}-joints`]]),
+                            new XML.Tag("input", null, [["semantic", "INV_BIND_MATRIX"], ["source", `#${c.geoName}-matrices`]])
+                        ]
+                    ));
+                    skinTag.appendChildren(new XML.Tag("vertex_weights",
+                        [
+                            new XML.Tag("input", null, [["semantic", "JOINT"], ["offset", 0], ["source", `#${c.geoName}-joints`]]),
+                            new XML.Tag("input", null, [["semantic", "WEIGHT"], ["offset", 1], ["source", `#${c.geoName}-weights`]]),
+                            new XML.Tag("vcount", counts.join(' ')),
+                            new XML.Tag("v", weightData.join(' '))
+                        ],
+                        new XML.Attribute("count", counts.length)
+                    ));
+                    libControllers.appendChildren(new XML.Tag("controller", skinTag,
+                        [["id", c.geoName + "-cont"], ["name", c.geoName + "-cont"]])
+                    );
                 }
             } else if (c instanceof SC3DNodeList) {
                 /**
@@ -385,7 +399,9 @@ class SC3D {
                                 materials,
                                 new XML.Attribute("url", '#' + node.targetName)));
                         } else if (node.targetType === "CAME") {
-                            //TODO: Find out what to do here
+                            tag.appendChildren(new XML.Tag("instance_camera",
+                                null, new XML.Attribute("url", '#' + node.targetName)
+                            ));
                         }
                     }
                     //TODO: Frames
@@ -423,6 +439,7 @@ class SC3D {
                 let tempTexName;
                 const addTexture = (tex, imgName, addImg) => {
                     let img = imgName;
+                    //TODO: .sc textures
                     if (!imgName) img = tex.replace(/\.pvr.*$/, ".png");
                     if (!img.endsWith(".png")) img += ".png";
                     effectProfileTag.appendChildren([
@@ -439,46 +456,70 @@ class SC3D {
                             new XML.Attribute("sid", tex + "-sampler"))
 
                     ]);
-                    if (addImg !== false) libImages.appendChildren(new XML.Tag("image",
-                        new XML.Tag("init_from", img),
-                        [["id", tex], ["name", tex]]
-                    ));
+                    if (addImg !== false) images.push([tex, img]);
                 };
-                if (c.ambientColor) effectPhongTag.appendChildren(new XML.Tag("ambient",
+                const emissionTag = new XML.Tag("emission");
+                const ambientTag = new XML.Tag("ambient");
+                const diffuseTag = new XML.Tag("diffuse");
+                const specularTag = new XML.Tag("specular");
+
+                if (c.ambientColor) ambientTag.appendChildren(
                     new XML.Tag("color", SC3DMaterial.getRGBA(c.ambientColor).join(' '))
-                ));
+                );
                 else if (c.ambientTexture) {
                     if (c.ambientTexture === '.') {
                         tempTexName = c.matName + "_tex_" + matTexIdx++;
                         addTexture(tempTexName, c.matName + "_tex", matTexIdx === 1);
-                        effectPhongTag.appendChildren(new XML.Tag("ambient",
+                        ambientTag.appendChildren(
                             new XML.Tag("texture", null, [["texture", tempTexName + "-sampler"], ["texcoord", "UVMap"]])
-                        ));
+                        );
                     } else {
                         addTexture(c.ambientTexture);
-                        effectPhongTag.appendChildren(new XML.Tag("ambient",
-                            new XML.Tag("texture", null, [["texture", c.ambientTexture + "-sampler"], ["texcoord", "Normal"]])
-                        ));
+                        ambientTag.appendChildren(
+                            new XML.Tag("texture", null, [["texture", c.ambientTexture + "-sampler"], ["texcoord", "UVMap"]])
+                        );
                     }
                 }
-                if (c.diffuseColor) effectPhongTag.appendChildren(new XML.Tag("diffuse",
+                if (c.diffuseColor) diffuseTag.appendChildren(
                     new XML.Tag("color", SC3DMaterial.getRGBA(c.diffuseColor).join(' '))
-                ));
+                );
                 else if (c.diffuseTexture) {
                     if (c.diffuseTexture === '.') {
                         tempTexName = c.matName + "_tex_" + matTexIdx++;
                         addTexture(tempTexName, c.matName + "_tex", matTexIdx === 1);
-                        effectPhongTag.appendChildren(new XML.Tag("diffuse",
+                        diffuseTag.appendChildren(
                             new XML.Tag("texture", null, [["texture", tempTexName + "-sampler"], ["texcoord", "UVMap"]])
-                        ));
+                        );
                     } else {
                         addTexture(c.diffuseTexture);
-                        effectPhongTag.appendChildren(new XML.Tag("diffuse",
-                            new XML.Tag("texture", null, [["texture", c.diffuseTexture + "-sampler"], ["texcoord", "Normal"]])
-                        ));
+                        diffuseTag.appendChildren(
+                            new XML.Tag("texture", null, [["texture", c.diffuseTexture + "-sampler"], ["texcoord", "UVMap"]])
+                        );
                     }
                 }
-                effectPhongTag.appendChildren(new XML.Tag("index_of_refraction", new XML.Tag("float", "1")))
+                if (c.emissionColor) emissionTag.appendChildren(
+                    new XML.Tag("color", SC3DMaterial.getRGBA(c.emissionColor).join(' '))
+                );
+                else if (c.emissionTexture) {
+                    if (c.emissionTexture === '.') {
+                        tempTexName = c.matName + "_tex_" + matTexIdx++;
+                        addTexture(tempTexName, c.matName + "_tex", matTexIdx === 1);
+                        emissionTag.appendChildren(
+                            new XML.Tag("texture", null, [["texture", tempTexName + "-sampler"], ["texcoord", "UVMap"]])
+                        );
+                    } else {
+                        addTexture(c.emissionTexture);
+                        emissionTag.appendChildren(
+                            new XML.Tag("texture", null, [["texture", c.emissionTexture + "-sampler"], ["texcoord", "UVMap"]])
+                        );
+                    }
+                }
+
+                if (emissionTag.content.length) effectPhongTag.appendChildren(emissionTag);
+                if (ambientTag.content.length) effectPhongTag.appendChildren(ambientTag);
+                if (diffuseTag.content.length) effectPhongTag.appendChildren(diffuseTag);
+                if (specularTag.content.length) effectPhongTag.appendChildren(specularTag);
+                effectPhongTag.appendChildren(new XML.Tag("index_of_refraction", new XML.Tag("float", "1")));
                 effectProfileTag.appendChildren(new XML.Tag("technique", effectPhongTag, new XML.Attribute("sid", "common")));
                 libEffects.appendChildren(effectTag);
                 libMaterials.appendChildren(new XML.Tag("material",
@@ -486,15 +527,16 @@ class SC3D {
                     [["id", c.matName], ["name", c.matName]]
                 ));
                 //TODO: Figure out what exactly can be done with the stencil
+                //TODO: Lightmaps
                 //TODO: Figure out more stuff
             } else if (c instanceof SC3DCamera) {
                 libCameras.appendChildren(new XML.Tag("camera",
                     new XML.Tag("optics", new XML.Tag("technique_common", new XML.Tag("perspective",
                         [
-                            new XML.Tag("xfov", c.xFOV),
-                            new XML.Tag("aspect_ratio", c.aspectRatio),
-                            new XML.Tag("znear", c.zNear),
-                            new XML.Tag("zfar", c.zFar)
+                            new XML.Tag("xfov", c.xFOV.toString()),
+                            new XML.Tag("aspect_ratio", c.aspectRatio.toString()),
+                            new XML.Tag("znear", c.zNear.toString()),
+                            new XML.Tag("zfar", c.zFar.toString())
                         ]
                     ))),
                     [["id", c.camName], ["name", c.camName]]
@@ -505,7 +547,7 @@ class SC3D {
 
     toString() {
         return `SC3D ${this.name}: ${this.chunks.length} chunks: ` +
-            this.chunks.length ? '\n' + this.chunks.map(c => '\t' + c.toString().replace(/\n/g, "\n\t")).join('\n') : "";
+            (this.chunks.length ? '\n' + this.chunks.map(c => '\t' + c.toString().replace(/\n/g, "\n\t")).join('\n') : "");
     }
 
     static set importPath(path) {
@@ -549,7 +591,7 @@ class SC3D {
         if (this.hasVersion && typeof this.version === "string" && this.version) return this.version;
         const { execSync } = require("child_process");
         const execOpts = { cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: 10 * 1000 };
-        let version = "unknown-v0.0.2";
+        let version = "unknown-v0.1.0";
         try {
             version = "git-" + execSync("git rev-parse --short=10 HEAD", execOpts).replace(/[\n\r]/g, "");
             version += '-' + execSync("git describe --tags", execOpts).split('\n')[0].replace('\r', "");
@@ -655,7 +697,7 @@ class SC3DHeader extends SC3DChunk {
     }
 
     toString() {
-        return `${super.toString()}; lib=${this.libName}, v1W=${this.version}, v2W=${this.val2}, v3D=${this.val3}, v4B=${this.val4}`;
+        return `${super.toString()}; lib=${this.libName}, ver=${this.version}, v2W=${this.val2}, v3D=${this.val3}, v4B=${this.val4}`;
     }
 }
 
@@ -994,7 +1036,7 @@ class SC3DNode {
                     ptr += 2;
                     let rw = this.data.readInt16BE(ptr);
                     ptr += 2;
-                    rot = new Quaternion(rx / 0x7F00, ry / 0x7F00, rz / 0x7F00, rw / 0x7F00);
+                    rot = new Quaternion(rx / 0x7F0, ry / 0x7F0, rz / 0x7F0, rw / 0x7F0);
                 }
                 if (posCount || !i) {
                     let p = [];
@@ -1025,7 +1067,7 @@ class SC3DNode {
     }
 
     toString() {
-        const nodeInfo = `${this.name}${this.parent ? " <- " + this.parent : ""}: ${this.frames.length} frames`;
+        const nodeInfo = `${this.name}${this.parent ? " <- " + this.parent : ""}: ${this.frames.length} keyframes`;
         const targetInfo = this.hasTarget ? `Target: ${this.targetName} {${this.targetType}}` : "No target";
         return `${nodeInfo}, ${targetInfo}`;
     }
