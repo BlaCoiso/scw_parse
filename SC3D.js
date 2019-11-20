@@ -139,6 +139,7 @@ class SC3D {
      * @param {XML.Tag} libCameras 
      */
     appendToLibrary(images, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras) {
+        if (!this.loaded) this.load();
         this.chunks.forEach(c => {
             if (c instanceof SC3DHeader) {
                 if (c.library) c.library.appendToLibrary(images, libEffects, libMaterials, libGeometries, libControllers, libAnimations, visualScene, libCameras);
@@ -371,7 +372,7 @@ class SC3D {
                  * @param {XML.Tag} tag 
                  */
                 const addNodeData = (node, tag) => {
-                    if (node.frames.length === 0) console.warn(`Node ${node.name} has no frames, skipping transformation data`);
+                    if (node.frames.length === 0);//console.warn(`Node ${node.name} has no frames, skipping transformation data`);
                     else {
                         const nodeFrame = node.frames[0];
                         const pos = nodeFrame.position;
@@ -551,7 +552,11 @@ class SC3D {
     }
 
     static set importPath(path) {
-        importPath = path;
+        if (path && typeof path === "string" && fs.existsSync(path)) importPath = path;
+    }
+
+    static get importPath() {
+        return importPath;
     }
 
     /**
@@ -568,6 +573,7 @@ class SC3D {
         if (name.startsWith("sc3d/")) return this.importLib(name.replace("sc3d/", ""));
         if (importMap.has(name)) return importMap.get(name);
         else {
+            //TODO: Refactor this code
             if (!name.endsWith(".scw")) name += ".scw";
             const libPath = importPath + '/' + name;
             if (fs.existsSync(libPath)) {
@@ -578,6 +584,16 @@ class SC3D {
             } else if (fs.existsSync(importPath + "/sc3d/" + name)) {
                 importPath += "/sc3d";
                 return this.importLib(name);
+            } else if (fs.existsSync(name)) {
+                const libFile = new SC3D(fs.readFileSync(name), name);
+                importMap.set(name, libFile);
+                libFile.load();
+                return libFile;
+            } else if (fs.existsSync("sc3d/" + name)) {
+                const libFile = new SC3D(fs.readFileSync("sc3d/" + name), name);
+                importMap.set(name, libFile);
+                libFile.load();
+                return libFile;
             }
             else throw new ReferenceError("Failed to find library " + name);
         }
@@ -593,10 +609,11 @@ class SC3D {
         const execOpts = { cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: 10 * 1000 };
         let version = "unknown-v0.1.0";
         try {
-            version = "git-" + execSync("git rev-parse --short=10 HEAD", execOpts).replace(/[\n\r]/g, "");
-            version += '-' + execSync("git describe --tags", execOpts).split('\n')[0].replace('\r', "");
+            const gitHash = execSync("git rev-parse --short=10 HEAD", execOpts).replace(/[\n\r]/g, "");
+            const gitTag = execSync("git describe --tags", execOpts).split('\n')[0].replace('\r', "");
+            if (gitHash && gitTag && typeof gitHash === "string") version = `git-${gitHash}-${gitTag}`;
         } catch (e) {
-            console.error("Failed to read version:", e);
+            console.error("Failed to read version from git");
         }
         this.hasVersion = true;
         this.version = version;
