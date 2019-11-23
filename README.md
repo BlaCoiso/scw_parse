@@ -12,7 +12,7 @@ const SC3D = require("./SC3D");
 SC3D.importPath = "/path/to/sc3d/folder";
 ```
 
-## Using convert.js
+### Using convert.js
 Use `node convert --help` for help with using the convert.js script.
 
 Example: `node convert --source /path/to/sc3d/folder --output /path/to/output/folder --all`

@@ -379,7 +379,7 @@ class SC3D {
                         const rot = nodeFrame.rotation;
                         const scale = nodeFrame.scale;
                         tag.appendChildren(new XML.Tag("translate", `${pos.x} ${pos.y} ${pos.z}`, new XML.Attribute("sid", "location")));
-                        tag.appendChildren(new XML.Tag("rotate", `${rot.x} ${rot.y} ${rot.z} ${rot.w}`, new XML.Attribute("sid", "rotation")));
+                        tag.appendChildren(new XML.Tag("rotate", `${rot.xAxis} ${rot.yAxis} ${rot.zAxis} ${rot.angle * (180 / Math.PI)}`, new XML.Attribute("sid", "rotation")));
                         tag.appendChildren(new XML.Tag("scale", `${scale.x} ${scale.y} ${scale.z}`, new XML.Attribute("sid", "scale")));
                     }
                     if (node.hasTarget) {
@@ -534,10 +534,10 @@ class SC3D {
                 libCameras.appendChildren(new XML.Tag("camera",
                     new XML.Tag("optics", new XML.Tag("technique_common", new XML.Tag("perspective",
                         [
-                            new XML.Tag("xfov", c.xFOV.toString()),
-                            new XML.Tag("aspect_ratio", c.aspectRatio.toString()),
-                            new XML.Tag("znear", c.zNear.toString()),
-                            new XML.Tag("zfar", c.zFar.toString())
+                            new XML.Tag("xfov", c.xFOV),
+                            new XML.Tag("aspect_ratio", c.aspectRatio),
+                            new XML.Tag("znear", c.zNear),
+                            new XML.Tag("zfar", c.zFar)
                         ]
                     ))),
                     [["id", c.camName], ["name", c.camName]]
@@ -607,7 +607,7 @@ class SC3D {
         if (this.hasVersion && typeof this.version === "string" && this.version) return this.version;
         const { execSync } = require("child_process");
         const execOpts = { cwd: __dirname, windowsHide: true, encoding: "utf8", timeout: 10 * 1000 };
-        let version = "unknown-v0.1.0";
+        let version = "unknown-v0.1.2";
         try {
             const gitHash = execSync("git rev-parse --short=10 HEAD", execOpts).replace(/[\n\r]/g, "");
             const gitTag = execSync("git describe --tags", execOpts).split('\n')[0].replace('\r', "");
@@ -1053,7 +1053,7 @@ class SC3DNode {
                     ptr += 2;
                     let rw = this.data.readInt16BE(ptr);
                     ptr += 2;
-                    rot = new Quaternion(rx / 0x7F0, ry / 0x7F0, rz / 0x7F0, rw / 0x7F0);
+                    rot = new Quaternion(rx / 0x7F00, ry / 0x7F00, rz / 0x7F00, rw / 0x7F00);
                 }
                 if (posCount || !i) {
                     let p = [];
@@ -1273,6 +1273,26 @@ class Quaternion {
         this.y = y;
         this.z = z;
         this.w = w;
+    }
+
+    get axisFactor() {
+        return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+    }
+
+    get angle() {
+        return 2 * Math.atan2(this.axisFactor, this.w);
+    }
+
+    get xAxis() {
+        return this.x / this.axisFactor;
+    }
+
+    get yAxis() {
+        return this.y / this.axisFactor;
+    }
+
+    get zAxis() {
+        return this.z / this.axisFactor;
     }
 }
 
